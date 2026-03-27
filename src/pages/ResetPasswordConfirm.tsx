@@ -29,6 +29,7 @@ import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 
 interface ResetPasswordConfirmProps {
@@ -41,6 +42,7 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
   const [confirmPassword, setConfirmPassword] = useState('');
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate()
 
   const handleResetPassword = async () => {
     // Validate inputs
@@ -75,6 +77,7 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
 
       toast.success('Password updated successfully!');
       onNavigate('login');
+      navigate('/');
       
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
@@ -133,7 +136,10 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
             <div className="text-center text-sm text-gray-600">
               <button
                 type="button"
-                onClick={() => onNavigate('login')}
+                onClick={() => {
+                  onNavigate('login');
+                  navigate('/');
+                }}
                 className="text-blue-600 hover:underline"
               >
                 Back to Login

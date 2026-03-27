@@ -6,6 +6,7 @@ import { GraduationCap } from 'lucide-react';
 import type { Page } from '../App';
 import { HelpChatbot } from '../components/HelpChatbot';
 
+
 interface WelcomePageProps {
   onNavigate: (page: Page) => void;
 }
