@@ -27,6 +27,8 @@ import { ArrowLeft, Mail } from 'lucide-react';
 import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
+import { supabase } from '../lib/supabase';
+
 
 interface ForgotPasswordPageProps {
   onNavigate: (page: Page) => void;
@@ -38,38 +40,7 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  /**
-   * Handle password reset request
-   * Sends email to backend API to initiate password reset
-   * 
-   * TODO: Implement this API endpoint in your backend
-   * 
-   * API ENDPOINT: POST /api/auth/forgot-password
-   * 
-   * Request Body:
-   * {
-   *   "email": "user@pmu.edu.sa"
-   * }
-   * 
-   * Expected Response (Success):
-   * {
-   *   "success": true,
-   *   "message": "Password reset email sent"
-   * }
-   * 
-   * Expected Response (Error):
-   * {
-   *   "success": false,
-   *   "error": "Email not found"
-   * }
-   * 
-   * BACKEND TASKS:
-   * 1. Check if email exists in database
-   * 2. Generate secure reset token (UUID or JWT)
-   * 3. Store token with expiration (e.g., 1 hour)
-   * 4. Send email with reset link containing token
-   * 5. Link format: https://yourapp.com/reset-password?token=xyz
-   */
+
   const handleResetRequest = async () => {
     // Validate email
     if (!email) {
@@ -80,37 +51,16 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
     setLoading(true);
 
     try {
-      // TODO: Replace this placeholder with actual API call
-      // Example implementation:
-      /*
-      const response = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'http://localhost:5173/reset-password',
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        toast.error(data.error || 'Failed to send reset email');
-        setLoading(false);
+      if (error) {
+        toast.error(error.message);
         return;
       }
 
-      toast.success('Password reset email sent! Please check your inbox.');
-      onPasswordReset(email);
-      */
-
-      // PLACEHOLDER: Simulate API call for testing
-      console.log('[AUTH] Password reset request:', { email });
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock success
-      toast.success('Password reset email sent! (Mock - API not implemented)');
+      toast.success('Password reset email sent!');
       onPasswordReset(email);
       
     } catch (error) {

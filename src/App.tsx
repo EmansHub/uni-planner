@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { WelcomePage } from './pages/WelcomePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -8,6 +8,8 @@ import { Dashboard } from './pages/Dashboard';
 import { UserProfile } from './pages/UserProfile';
 import { EditPasswordPage } from './pages/EditPasswordPage';
 import { Toaster } from './ui/sonner'; 
+import { ResetLinkSentPage } from './pages/ResetLinkSentPage';
+import { supabase } from './lib/supabase';
 
 
 export type Page =
@@ -15,6 +17,7 @@ export type Page =
   | 'login'
   | 'register'
   | 'forgot-password'
+  | 'reset-link-sent'
   | 'reset-password-confirm'
   | 'dashboard'
   | 'user-profile'
@@ -36,6 +39,19 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [resetEmail, setResetEmail] = useState('');
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setResetEmail(session?.user?.email ?? '');
+        setCurrentPage('reset-password-confirm');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   return (
     <>
@@ -73,8 +89,15 @@ function App() {
           onPasswordReset={(email) => {
             console.log('Password reset requested for:', email);
             setResetEmail(email);
-            setCurrentPage('reset-password-confirm');
+            setCurrentPage('reset-link-sent');
           }}
+        />
+      )}
+
+      {currentPage === 'reset-link-sent' && (
+        <ResetLinkSentPage
+          email={resetEmail}
+          onNavigate={setCurrentPage}
         />
       )}
 

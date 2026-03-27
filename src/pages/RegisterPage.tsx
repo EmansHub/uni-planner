@@ -34,6 +34,7 @@ import { ArrowLeft } from 'lucide-react';
 import type { Page, User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
+import { supabase } from '../lib/supabase';
 
 // =============================================================================
 // COMPONENT PROPS
@@ -67,138 +68,58 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
   // REGISTRATION HANDLER
   // ---------------------------------------------------------------------------
   
-  /**
-   * Handle registration button click
-   * Validates input and creates new user account via API
-   * 
-   * TODO: Implement this API endpoint in your backend
-   * 
-   * API ENDPOINT: POST /api/auth/register
-   * 
-   * Request Body:
-   * {
-   *   "email": "user@pmu.edu.sa",
-   *   "name": "John Doe",
-   *   "major": "Computer Science",
-   *   "enrollmentSemester": "Fall 2024/25",
-   *   "gender": "Male",
-   *   "password": "userPassword123"
-   * }
-   * 
-   * Expected Response (Success):
-   * {
-   *   "success": true,
-   *   "user": {
-   *     "email": "user@pmu.edu.sa",
-   *     "name": "John Doe",
-   *     "major": "Computer Science",
-   *     "enrollmentSemester": "Fall 2024/25",
-   *     "gender": "Male"
-   *   },
-   *   "message": "Registration successful"
-   * }
-   * 
-   * Expected Response (Error):
-   * {
-   *   "success": false,
-   *   "error": "Email already exists"
-   * }
-   * 
-   * BACKEND TASKS:
-   * 1. Validate all fields
-   * 2. Check if email already exists in database
-   * 3. Hash the password (NEVER store plain text!)
-   * 4. Create user record in database
-   * 5. Create session (cookie or JWT)
-   * 6. Return user data (without password)
-   */
   const handleRegister = async () => {
-    // Step 1: Validate all fields are filled
-    if (!email || !name || !major || !enrollmentSemester || !gender || !password || !confirmPassword) {
+    if (!email || !name || !major || !enrollmentSemester || !password || !confirmPassword || !gender) {
       toast.error('Please fill in all fields');
       return;
     }
 
-    // Step 2: Validate passwords match
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    // Step 3: Validate password length
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters');
       return;
     }
 
-    // Step 4: Set loading state
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // TODO: Replace this placeholder with actual API call
-      // Example implementation:
-      /*
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            major,
+            enrollmentSemester,
+            gender,
+          },
         },
-        credentials: 'include', // Important: Include cookies
-        body: JSON.stringify({
-          email,
-          name,
-          major,
-          enrollmentSemester,
-          gender,
-          password,
-        }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        toast.error(data.error || 'Registration failed');
-        setLoading(false);
+      if (error) {
+        toast.error(error.message);
         return;
       }
 
-      // Registration successful!
-      onRegister(data.user);
-      toast.success('Registration successful! Welcome to Uni Planner!');
-      */
+      toast.success('Account created! Check your email if needed.');
 
-      // PLACEHOLDER: Simulate API call with mock data for testing
-      console.log('[AUTH] Registration attempt:', { 
-        email, 
-        name, 
-        major, 
-        enrollmentSemester, 
-        gender,
-        password: '***' 
-      });
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock successful registration for testing purposes
-      const mockUser: User = {
+      onRegister({
         email,
         name,
         major,
         enrollmentSemester,
-        password: '',
+        password,
         gender,
-      };
-      
-      onRegister(mockUser);
-      toast.success('Registration successful! (Mock - API not implemented)');
-      
+      });
+
     } catch (error) {
-      // Handle network or other errors
-      console.error('[AUTH] Registration error:', error);
-      toast.error('An error occurred during registration. Please check your connection.');
+      console.error('[AUTH] Register error:', error);
+      toast.error('Something went wrong');
     } finally {
-      // Reset loading state
       setLoading(false);
     }
   };
@@ -333,8 +254,6 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 <SelectContent>
                   <SelectItem value="Male">Male</SelectItem>
                   <SelectItem value="Female">Female</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                  <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
                 </SelectContent>
               </Select>
             </div>

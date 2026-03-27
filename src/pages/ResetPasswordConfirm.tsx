@@ -28,6 +28,8 @@ import { CheckCircle } from 'lucide-react';
 import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
+import { supabase } from '../lib/supabase';
+
 
 interface ResetPasswordConfirmProps {
   email: string;
@@ -40,44 +42,6 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  /**
-   * Handle password reset confirmation
-   * Sends new password to backend API
-   * 
-   * TODO: Implement this API endpoint in your backend
-   * 
-   * API ENDPOINT: POST /api/auth/reset-password
-   * 
-   * Request Body:
-   * {
-   *   "token": "reset-token-from-url",
-   *   "newPassword": "newPassword123"
-   * }
-   * 
-   * Expected Response (Success):
-   * {
-   *   "success": true,
-   *   "message": "Password reset successful"
-   * }
-   * 
-   * Expected Response (Error):
-   * {
-   *   "success": false,
-   *   "error": "Invalid or expired token"
-   * }
-   * 
-   * BACKEND TASKS:
-   * 1. Validate reset token (check if exists and not expired)
-   * 2. Hash the new password
-   * 3. Update user's password in database
-   * 4. Delete/invalidate the reset token
-   * 5. Return success response
-   * 
-   * SECURITY NOTES:
-   * - Reset tokens should expire after 1 hour
-   * - Tokens should be single-use (deleted after reset)
-   * - Always hash passwords before storing
-   */
   const handleResetPassword = async () => {
     // Validate inputs
     if (!newPassword || !confirmPassword) {
@@ -98,53 +62,18 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
     setLoading(true);
 
     try {
-      // TODO: Replace this placeholder with actual API call
-      // In a real implementation, you'd get the token from URL parameters
-      // Example:
-      /*
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token');
-
-      if (!token) {
-        toast.error('Invalid reset link');
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token,
-          newPassword,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        toast.error(data.error || 'Failed to reset password');
-        setLoading(false);
-        return;
-      }
-
-      toast.success('Password reset successful! Please login with your new password.');
-      onNavigate('login');
-      */
 
       // PLACEHOLDER: Simulate API call for testing
-      console.log('[AUTH] Password reset:', { 
-        email, 
-        newPassword: '***' 
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
       });
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock success
-      toast.success('Password reset successful! (Mock - API not implemented)');
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success('Password updated successfully!');
       onNavigate('login');
       
     } catch (error) {

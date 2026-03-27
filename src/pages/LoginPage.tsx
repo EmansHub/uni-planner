@@ -29,6 +29,7 @@ import { ArrowLeft } from 'lucide-react';
 import type { Page, User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
+import { supabase } from '../lib/supabase';
 
 
 // =============================================================================
@@ -58,106 +59,42 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
   // LOGIN HANDLER
   // ---------------------------------------------------------------------------
   
-  /**
-   * Handle login button click
-   * Validates credentials via backend API
-   * 
-   * TODO: Implement this API endpoint in your backend
-   * 
-   * API ENDPOINT: POST /api/auth/login
-   * 
-   * Request Body:
-   * {
-   *   "email": "user@pmu.edu.sa",
-   *   "password": "userPassword123"
-   * }
-   * 
-   * Expected Response (Success):
-   * {
-   *   "success": true,
-   *   "user": {
-   *     "email": "user@pmu.edu.sa",
-   *     "name": "John Doe",
-   *     "major": "Computer Science",
-   *     "enrollmentSemester": "Fall 2024/25",
-   *     "gender": "Male"
-   *   },
-   *   "message": "Login successful"
-   * }
-   * 
-   * Expected Response (Error):
-   * {
-   *   "success": false,
-   *   "error": "Invalid email or password"
-   * }
-   * 
-   * IMPORTANT: Backend should set an HTTP-only cookie or return a JWT token
-   * for session management.
-   */
+
   const handleLogin = async () => {
-    // Step 1: Validate input fields
     if (!email || !password) {
       toast.error('Please fill in all fields');
       return;
     }
 
-    // Step 2: Set loading state
     setLoading(true);
 
     try {
-      // TODO: Replace this placeholder with actual API call
-      // Example implementation:
-      /*
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Important: Include cookies
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        toast.error(data.error || 'Invalid email or password');
-        setLoading(false);
+      if (error) {
+        toast.error(error.message);
         return;
       }
 
-      // Login successful!
-      onLogin(data.user);
-      toast.success('Login successful!');
-      */
+      const user = data.user;
 
-      // PLACEHOLDER: Simulate API call with mock data for testing
-      console.log('[AUTH] Login attempt:', { email, password: '***' });
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock successful login for testing purposes
-      const mockUser: User = {
-        email: email,
-        name: 'Test User',
-        major: 'Computer Science',
-        enrollmentSemester: 'Fall 2024/25',
-        password: '',
-        gender: 'Male'
-      };
-      
-      onLogin(mockUser);
-      toast.success('Login successful! (Mock - API not implemented)');
-      
+      toast.success('Login successful!');
+
+      onLogin({
+        email: user.email ?? email,
+        name: user.user_metadata?.name ?? 'User',
+        major: user.user_metadata?.major ?? '',
+        enrollmentSemester: user.user_metadata?.enrollmentSemester ?? '',
+        password,
+        gender: user.user_metadata?.gender ?? '',
+      });
     } catch (error) {
-      // Handle network or other errors
       console.error('[AUTH] Login error:', error);
-      toast.error('An error occurred during login. Please check your connection.');
+      toast.error('Something went wrong');
     } finally {
-      // Reset loading state
       setLoading(false);
     }
   };
