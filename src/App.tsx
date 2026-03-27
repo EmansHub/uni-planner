@@ -97,6 +97,60 @@ function App() {
       <Toaster />
 
       <Routes>
+
+        <Route path="/" element={<WelcomePage />} />
+
+        <Route
+          path="/login"
+          element={
+            <LoginPage
+              onNavigate={setCurrentPage}
+              onLogin={(user) => {
+                console.log('Logged in user:', user);
+                setCurrentUser(user);
+                setCurrentPage('dashboard');
+              }}
+            />
+          }
+        />
+
+        <Route
+          path="/register"
+          element={
+            <RegisterPage
+              onNavigate={setCurrentPage}
+              onRegister={(user) => {
+                console.log('Registered user:', user);
+                setCurrentPage('login');
+              }}
+            />
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={
+            <ForgotPasswordPage
+              onNavigate={setCurrentPage}
+              onPasswordReset={(email) => {
+                console.log('Password reset requested for:', email);
+                setResetEmail(email);
+                setCurrentPage('reset-link-sent');
+              }}
+            />
+          }
+        />
+
+        <Route
+          path="/reset-link-sent"
+          element={
+            <ResetLinkSentPage
+              email={resetEmail}
+              onNavigate={setCurrentPage}
+            />
+          }
+        />
+
         <Route
           path="/reset-password"
           element={
@@ -107,14 +161,12 @@ function App() {
           }
         />
 
+        
+
         <Route
           path="*"
           element={
             <>
-
-              {currentPage === 'welcome' && (
-                <WelcomePage onNavigate={setCurrentPage} />
-              )}
 
               {currentPage === 'login' && (
                 <LoginPage

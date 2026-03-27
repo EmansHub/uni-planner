@@ -1,18 +1,15 @@
-//import React from 'react';
+
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { GraduationCap } from 'lucide-react';
 import type { Page } from '../App';
 import { HelpChatbot } from '../components/HelpChatbot';
 
-
-interface WelcomePageProps {
-  onNavigate: (page: Page) => void;
-}
-
-export function WelcomePage({ onNavigate }: WelcomePageProps) {
+export function WelcomePage() {
   const [chatbotOpen, setChatbotOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <>
@@ -37,7 +34,7 @@ export function WelcomePage({ onNavigate }: WelcomePageProps) {
               <Button
                 className="w-full"
                 size="lg"
-                onClick={() => onNavigate('login')}
+                onClick={() => navigate('/login')}
               >
                 Login
               </Button>
@@ -46,7 +43,7 @@ export function WelcomePage({ onNavigate }: WelcomePageProps) {
                 className="w-full" 
                 variant="outline" 
                 size="lg"
-                onClick={() => onNavigate('register')}
+                onClick={() => navigate('/register')}
               >
                 Register
               </Button>
@@ -55,7 +52,7 @@ export function WelcomePage({ onNavigate }: WelcomePageProps) {
                 className="w-full" 
                 variant="ghost" 
                 size="lg"
-                onClick={() => onNavigate('forgot-password')}
+                onClick={() => navigate('/forgot-password')}
               >
                 Forgot Password
               </Button>
