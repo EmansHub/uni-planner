@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ArrowLeft } from 'lucide-react';
-import type { User } from '../App';
+import type { Page, User } from '../App';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -14,75 +15,44 @@ interface EditPasswordPageProps {
 }
 
 export function EditPasswordPage({ user }: EditPasswordPageProps) {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [verificationSent, setVerificationSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const validatePasswords = () => {
-    if (!newPassword || !confirmNewPassword) {
-      toast.error('Please fill in all password fields');
-      return false;
-    }
-
-    if (newPassword !== confirmNewPassword) {
-      toast.error('New passwords do not match');
-      return false;
-    }
-
-    if (newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSendVerification = async () => {
-    if (!validatePasswords()) return;
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.reauthenticate();
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-
-      setVerificationSent(true);
-      setVerificationCode('');
-      toast.success('Verification code sent to your email.');
-    } catch (error) {
-      console.error('[AUTH] Reauthentication error:', error);
-      toast.error('Could not send verification code.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleChangePassword = async () => {
-    if (!validatePasswords()) return;
-
-    if (!verificationSent) {
-      toast.error('Please send the verification code first');
+    // Step 1: Validate all fields are filled
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      toast.error('Please fill in all fields');
       return;
     }
 
-    if (!verificationCode.trim()) {
-      toast.error('Please enter the verification code');
+    // Step 2: Validate new passwords match
+    if (newPassword !== confirmNewPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+
+    // Step 3: Validate password length
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    // Step 4: Don't allow same password
+    if (newPassword === currentPassword) {
+      toast.error('New password must be different from current password');
       return;
     }
 
     setLoading(true);
 
     try {
+
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
-        nonce: verificationCode.trim(),
       });
 
       if (error) {
@@ -92,12 +62,12 @@ export function EditPasswordPage({ user }: EditPasswordPageProps) {
 
       toast.success('Password changed successfully!');
 
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setVerificationCode('');
-      setVerificationSent(false);
 
       navigate('/user-profile');
+      
     } catch (error) {
       console.error('[AUTH] Password change error:', error);
       toast.error('An error occurred. Please try again.');
@@ -122,11 +92,24 @@ export function EditPasswordPage({ user }: EditPasswordPageProps) {
             </Button>
             <CardTitle>Change Password</CardTitle>
             <CardDescription>
-              Enter your new password, send a verification code to your email, then confirm the change.
+              Update your account password. Make sure to use a strong password.
             </CardDescription>
           </CardHeader>
-
           <CardContent className="space-y-4">
+            {/* Current password field */}
+            <div className="space-y-2">
+              <Label htmlFor="currentPassword">Current Password</Label>
+              <Input
+                id="currentPassword"
+                type="password"
+                placeholder="Enter your current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            {/* New password field */}
             <div className="space-y-2">
               <Label htmlFor="newPassword">New Password</Label>
               <Input
@@ -139,6 +122,7 @@ export function EditPasswordPage({ user }: EditPasswordPageProps) {
               />
             </div>
 
+            {/* Confirm new password field */}
             <div className="space-y-2">
               <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
               <Input
@@ -151,55 +135,27 @@ export function EditPasswordPage({ user }: EditPasswordPageProps) {
               />
             </div>
 
+            {/* Password requirements hint */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-800">
-                <strong>Password Change Process:</strong>
+                <strong>Password Requirements:</strong>
               </p>
               <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc">
-                <li>Fill in both password fields first</li>
-                <li>Send the verification code to your email</li>
-                <li>Enter the code below</li>
-                <li>Click Change Password to confirm</li>
+                <li>At least 6 characters long</li>
+                <li>Different from your current password</li>
               </ul>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={handleSendVerification}
+            {/* Change password button */}
+            <div className="flex gap-2 pt-4">
+              <Button 
+                className="flex-1" 
+                onClick={handleChangePassword}
                 disabled={loading}
               >
-                Send Verification Code
+                {loading ? 'Changing...' : 'Change Password'}
               </Button>
-            </div>
-
-            {verificationSent && (
-              <div className="space-y-2">
-                <Label htmlFor="verificationCode">Verification Code</Label>
-                <Input
-                  id="verificationCode"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Enter the code from your email"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
-                  disabled={loading}
-                />
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                className="flex-1"
-                onClick={handleChangePassword}
-                disabled={loading || !verificationSent}
-              >
-                {loading ? 'Processing...' : 'Change Password'}
-              </Button>
-
-              <Button
+              <Button 
                 variant="outline"
                 onClick={() => navigate('/user-profile')}
                 disabled={loading}

@@ -50,6 +50,11 @@ function App() {
         setResetEmail(session?.user?.email ?? '');
         setCurrentPage('reset-password-confirm');
       }
+
+      if (event === 'SIGNED_IN' && window.location.pathname === '/edit-password') {
+      localStorage.setItem('passwordChangeVerified', 'true');
+      }
+
     });
 
     return () => subscription.unsubscribe();
@@ -229,11 +234,6 @@ function App() {
             currentUser ? (
               <EditPasswordPage
                 user={currentUser}
-                onNavigate={setCurrentPage}
-                onUpdateUser={(updatedUser) => {
-                  console.log('Updated user after password change:', updatedUser);
-                  setCurrentUser(updatedUser);
-                }}
               />
             ) : (
               <LoginPage
