@@ -10,7 +10,7 @@ import { EditPasswordPage } from './pages/EditPasswordPage';
 import { Toaster } from './ui/sonner'; 
 import { ResetLinkSentPage } from './pages/ResetLinkSentPage';
 import { supabase } from './lib/supabase';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Await } from 'react-router-dom';
 
 
 export type Page =
@@ -40,6 +40,47 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [resetEmail, setResetEmail] = useState('');
+
+  const loadUserProfile = async (authUser: {
+    id: string;
+    email?: string | null;
+    user_metadata?: {
+      name?: string;
+      major?: string;
+      enrollmentSemester?: string;
+      gender?: string;
+    };
+  }) => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('email, name, major, enrollment_semester, gender')
+      .eq('id', authUser.id)
+      .single();
+
+    if (error) {
+      console.error('Profile fetch error:', error);
+
+      setCurrentUser({
+        email: authUser.email ?? '',
+        name: authUser.user_metadata?.name ?? 'User',
+        major: authUser.user_metadata?.major ?? '',
+        enrollmentSemester: authUser.user_metadata?.enrollmentSemester ?? '',
+        password: '',
+        gender: authUser.user_metadata?.gender ?? '',
+      });
+
+      return;
+    }
+
+    setCurrentUser({
+      email: data.email,
+      name: data.name,
+      major: data.major,
+      enrollmentSemester: data.enrollment_semester,
+      password: '',
+      gender: data.gender ?? '',
+    });
+  };
 
   //Password recovery + auth events 
   useEffect(() => {
@@ -73,22 +114,15 @@ function App() {
       const user = data.session?.user;
 
       if (user) {
-        setCurrentUser({
-          email: user.email ?? '',
-          name: user.user_metadata?.name ?? 'User',
-          major: user.user_metadata?.major ?? '',
-          enrollmentSemester: user.user_metadata?.enrollmentSemester ?? '',
-          password: '',
-          gender: user.user_metadata?.gender ?? '',
-        });
+        await loadUserProfile(user);
 
         setCurrentPage('dashboard');
 
         if (window.location.pathname === '/') {
           window.history.replaceState({}, '', '/dashboard');
         }
-
       }
+
     };
 
     getSession();
@@ -115,9 +149,18 @@ function App() {
           element={
             <LoginPage
               onNavigate={setCurrentPage}
-              onLogin={(user) => {
+              onLogin={async (user) => {
                 console.log('Logged in user:', user);
-                setCurrentUser(user);
+
+                const { data } = await supabase.auth.getUser();
+                const authUser = data.user;
+
+                if (authUser) {
+                  await loadUserProfile(authUser);
+                } else {
+                  setCurrentUser(user);
+                }
+
                 setCurrentPage('dashboard');
               }}
             />
@@ -129,8 +172,16 @@ function App() {
           element={
             <RegisterPage
               onNavigate={setCurrentPage}
-              onRegister={(user) => {
+              onRegister={async (user) => {
                 console.log('Registered user:', user);
+
+                const { data } = await supabase.auth.getUser();
+                const authUser = data.user;
+
+                if (authUser) {
+                  await loadUserProfile(authUser);
+                }
+
                 setCurrentPage('login');
               }}
             />
