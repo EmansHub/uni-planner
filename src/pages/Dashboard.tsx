@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Calendar, BookOpen, User, LogOut } from 'lucide-react';
 import type { Page, User as UserType } from '../App';
+import { useNavigate } from 'react-router-dom';
 
 interface DashboardProps {
   onNavigate: (page: Page) => void;
@@ -12,6 +13,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
+  const navigate = useNavigate();
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -34,7 +36,7 @@ export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => onNavigate('user-profile')}
+              onClick={() => navigate('/user-profile')}
               className="rounded-full"
             >
               <Avatar className="w-10 h-10">
@@ -58,7 +60,7 @@ export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           <Card 
             className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => onNavigate('plan-selection')}
+            onClick={() => navigate('/plan-selection')}
           >
             <CardHeader className="space-y-4">
               <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center">
@@ -80,7 +82,7 @@ export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
 
           <Card 
             className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => onNavigate('semester-schedule')}
+            onClick={() => navigate('/semester-schedule')}
           >
             <CardHeader className="space-y-4">
               <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center">

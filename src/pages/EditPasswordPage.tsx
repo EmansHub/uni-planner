@@ -1,22 +1,3 @@
-/**
- * =============================================================================
- * EDIT PASSWORD PAGE
- * =============================================================================
- * 
- * This component allows logged-in users to change their password via API.
- * 
- * HOW IT WORKS:
- * 1. User enters current password (for verification)
- * 2. User enters new password twice
- * 3. Frontend sends to backend API
- * 4. Backend verifies current password and updates to new one
- * 
- * AUTHENTICATION:
- * - Uses API-based password change (backend not yet implemented)
- * - Requires active user session
- * 
- * =============================================================================
- */
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
@@ -26,6 +7,7 @@ import { Label } from '../ui/label';
 import { ArrowLeft } from 'lucide-react';
 import type { Page, User } from '../App';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 interface EditPasswordPageProps {
   user: User;
@@ -38,41 +20,9 @@ export function EditPasswordPage({ user, onNavigate, onUpdateUser }: EditPasswor
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  /**
-   * Handle password change
-   * Validates and updates password via backend API
-   * 
-   * TODO: Implement this API endpoint in your backend
-   * 
-   * API ENDPOINT: POST /api/auth/change-password
-   * 
-   * Request Body:
-   * {
-   *   "currentPassword": "oldPassword123",
-   *   "newPassword": "newPassword456"
-   * }
-   * 
-   * Expected Response (Success):
-   * {
-   *   "success": true,
-   *   "message": "Password changed successfully"
-   * }
-   * 
-   * Expected Response (Error):
-   * {
-   *   "success": false,
-   *   "error": "Current password is incorrect"
-   * }
-   * 
-   * BACKEND TASKS:
-   * 1. Verify user is authenticated (check session/token)
-   * 2. Verify current password is correct
-   * 3. Validate new password meets requirements
-   * 4. Hash new password
-   * 5. Update password in database
-   * 6. Optionally: invalidate other sessions for security
-   */
+
   const handleChangePassword = async () => {
     // Step 1: Validate all fields are filled
     if (!currentPassword || !newPassword || !confirmNewPassword) {
@@ -101,43 +51,7 @@ export function EditPasswordPage({ user, onNavigate, onUpdateUser }: EditPasswor
     setLoading(true);
 
     try {
-      // TODO: Replace this placeholder with actual API call
-      // Example implementation:
-      /*
-      const response = await fetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Include session cookie
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-        }),
-      });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        toast.error(data.error || 'Failed to change password');
-        setLoading(false);
-        return;
-      }
-
-      toast.success('Password changed successfully!');
-      
-      // Clear form
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmNewPassword('');
-      
-      // Navigate back to profile
-      setTimeout(() => {
-        onNavigate('user-profile');
-      }, 1000);
-      */
-
-      // PLACEHOLDER: Simulate API call for testing
       console.log('[AUTH] Password change:', { 
         email: user.email,
         currentPassword: '***',
@@ -157,7 +71,7 @@ export function EditPasswordPage({ user, onNavigate, onUpdateUser }: EditPasswor
       
       // Navigate back to profile
       setTimeout(() => {
-        onNavigate('user-profile');
+        navigate('/user-profile');
       }, 1000);
       
     } catch (error) {
@@ -177,7 +91,7 @@ export function EditPasswordPage({ user, onNavigate, onUpdateUser }: EditPasswor
               variant="ghost"
               size="sm"
               className="w-fit mb-2"
-              onClick={() => onNavigate('user-profile')}
+              onClick={() => navigate('/user-profile')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Profile
@@ -249,7 +163,7 @@ export function EditPasswordPage({ user, onNavigate, onUpdateUser }: EditPasswor
               </Button>
               <Button 
                 variant="outline"
-                onClick={() => onNavigate('user-profile')}
+                onClick={() => navigate('/user-profile')}
                 disabled={loading}
               >
                 Cancel

@@ -78,6 +78,11 @@ function App() {
         });
 
         setCurrentPage('dashboard');
+
+        if (window.location.pathname === '/') {
+          window.history.replaceState({}, '', '/dashboard');
+        }
+
       }
     };
 
@@ -161,97 +166,94 @@ function App() {
           }
         />
 
-        
+        <Route
+          path="/dashboard"
+          element={
+            currentUser ? (
+              <Dashboard
+                onNavigate={setCurrentPage}
+                user={currentUser}
+                onLogout={async () => {
+                  const { error } = await supabase.auth.signOut();
+
+                  if (error) {
+                    console.error('Logout error:', error);
+                  }
+
+                  setCurrentUser(null);
+                  setCurrentPage('welcome');
+                  window.location.href = '/';
+                }}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
+
+        <Route
+          path="/user-profile"
+          element={
+            currentUser ? (
+              <UserProfile
+                user={currentUser}
+                onNavigate={setCurrentPage}
+                onUpdateUser={(updatedUser) => {
+                  console.log('Updated user:', updatedUser);
+                  setCurrentUser(updatedUser);
+                }}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
+
+        <Route
+          path="/edit-password"
+          element={
+            currentUser ? (
+              <EditPasswordPage
+                user={currentUser}
+                onNavigate={setCurrentPage}
+                onUpdateUser={(updatedUser) => {
+                  console.log('Updated user after password change:', updatedUser);
+                  setCurrentUser(updatedUser);
+                }}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
 
         <Route
           path="*"
+  
           element={
             <>
 
-              {currentPage === 'login' && (
-                <LoginPage
-                  onNavigate={setCurrentPage}
-                  onLogin={(user) => {
-                    console.log('Logged in user:', user);
-                    setCurrentUser(user);
-                    setCurrentPage('dashboard');
-                  }}
-                />
-              )}
-
-              {currentPage === 'register' && (
-                <RegisterPage
-                  onNavigate={setCurrentPage}
-                  onRegister={(user) => {
-                    console.log('Registered user:', user);
-                    setCurrentPage('login');
-                  }}
-                />
-              )}
-
-              {currentPage === 'forgot-password' && (
-                <ForgotPasswordPage
-                  onNavigate={setCurrentPage}
-                  onPasswordReset={(email) => {
-                    console.log('Password reset requested for:', email);
-                    setResetEmail(email);
-                    setCurrentPage('reset-link-sent');
-                  }}
-                />
-              )}
-
-              {currentPage === 'reset-link-sent' && (
-                <ResetLinkSentPage
-                  email={resetEmail}
-                  onNavigate={setCurrentPage}
-                />
-              )}
-
-              {currentPage === 'reset-password-confirm' && (
-                <ResetPasswordConfirm
-                  email={resetEmail}
-                  onNavigate={setCurrentPage}
-                />
-              )}
-
-              {currentPage === 'dashboard' && currentUser && (
-                <Dashboard
-                  onNavigate={setCurrentPage}
-                  user={currentUser}
-                  onLogout={async () => {
-                    const { error } = await supabase.auth.signOut();
-
-                    if (error) {
-                      console.error('Logout error:', error);
-                    }
-
-                    setCurrentUser(null);
-                    setCurrentPage('welcome');
-                  }}
-                />
-              )}
-
-              {currentPage === 'user-profile' && currentUser && (
-                <UserProfile
-                  user={currentUser}
-                  onNavigate={setCurrentPage}
-                  onUpdateUser={(updatedUser) => {
-                    console.log('Updated user:', updatedUser);
-                    setCurrentUser(updatedUser);
-                  }}
-                />
-              )}
-
-              {currentPage === 'edit-password' && currentUser && (
-                <EditPasswordPage
-                  user={currentUser}
-                  onNavigate={setCurrentPage}
-                  onUpdateUser={(updatedUser) => {
-                    console.log('Updated user after password change:', updatedUser);
-                    setCurrentUser(updatedUser);
-                  }}
-                />
-              )}
             </>
           }
         />

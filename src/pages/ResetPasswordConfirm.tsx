@@ -1,23 +1,3 @@
-/**
- * =============================================================================
- * RESET PASSWORD CONFIRM PAGE
- * =============================================================================
- * 
- * This component allows users to set a new password via backend API.
- * User arrives here after clicking reset link in email.
- * 
- * HOW IT WORKS:
- * 1. User clicks reset link in email (contains token)
- * 2. User enters new password twice
- * 3. Frontend sends new password + token to backend API
- * 4. Backend validates token and updates password
- * 
- * AUTHENTICATION:
- * - Uses API-based password reset (backend not yet implemented)
- * - Token validation handled by backend
- * 
- * =============================================================================
- */
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';

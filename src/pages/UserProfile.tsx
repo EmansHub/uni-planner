@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { ArrowLeft, Edit2 } from 'lucide-react';
 import type { Page, User } from '../App';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 interface UserProfileProps {
   user: User;
@@ -21,6 +22,7 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
   const [major, setMajor] = useState(user.major);
   const [enrollmentSemester, setEnrollmentSemester] = useState(user.enrollmentSemester);
   const [gender, setGender] = useState(user.gender || '');
+  const navigate = useNavigate();
 
   const getInitials = (name: string) => {
     return name
@@ -73,7 +75,7 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
         <Button
           variant="ghost"
           className="mb-4"
-          onClick={() => onNavigate('dashboard')}
+          onClick={() => navigate('/dashboard')}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Dashboard
@@ -201,7 +203,7 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
                   <Input value="••••••••" disabled className="bg-slate-100" />
                   <Button
                     variant="outline"
-                    onClick={() => onNavigate('edit-password')}
+                    onClick={() => navigate('/edit-password')}
                   >
                     Change
                   </Button>

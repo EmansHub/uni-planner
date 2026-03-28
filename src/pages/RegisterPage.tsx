@@ -1,28 +1,3 @@
-/**
- * =============================================================================
- * REGISTER PAGE COMPONENT
- * =============================================================================
- * 
- * This component handles new user registration via backend API.
- * 
- * HOW IT WORKS:
- * 1. User fills in registration form (email, name, major, etc.)
- * 2. Frontend validates input (passwords match, all fields filled, etc.)
- * 3. Sends data to backend API to create account
- * 4. Backend creates user and returns success
- * 5. Automatically logs user in
- * 
- * AUTHENTICATION:
- * - Uses API-based registration (backend not yet implemented)
- * - Session created automatically after successful registration
- * 
- * VALIDATION RULES:
- * - All fields are required
- * - Password must be at least 6 characters
- * - Password and confirm password must match
- * 
- * =============================================================================
- */
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
@@ -35,6 +10,7 @@ import type { Page, User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 // =============================================================================
 // COMPONENT PROPS
@@ -63,6 +39,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
   const [confirmPassword, setConfirmPassword] = useState('');     // Password confirmation
   const [chatbotOpen, setChatbotOpen] = useState(false);          // Help chatbot visibility
   const [loading, setLoading] = useState(false);                  // Loading state
+  const navigate = useNavigate();
 
   // ---------------------------------------------------------------------------
   // REGISTRATION HANDLER
@@ -116,6 +93,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
         gender,
       });
 
+      navigate('/login');
+
     } catch (error) {
       console.error('[AUTH] Register error:', error);
       toast.error('Something went wrong');
@@ -152,7 +131,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
               variant="ghost"
               size="sm"
               className="w-fit mb-2"
-              onClick={() => onNavigate('welcome')}
+              onClick={() => navigate('/')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -300,7 +279,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
               Already have an account?{' '}
               <button
                 type="button"
-                onClick={() => onNavigate('login')}
+                onClick={() => navigate('/login')}
                 className="text-blue-600 hover:underline font-medium"
               >
                 Login here

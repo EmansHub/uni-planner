@@ -1,22 +1,3 @@
-/**
- * =============================================================================
- * FORGOT PASSWORD PAGE
- * =============================================================================
- * 
- * This component allows users to request a password reset via backend API.
- * 
- * HOW IT WORKS:
- * 1. User enters their email address
- * 2. Frontend sends email to backend API
- * 3. Backend sends password reset email with token/link
- * 4. User clicks link in email to reset password
- * 
- * AUTHENTICATION:
- * - Uses API-based password reset (backend not yet implemented)
- * - Backend should send email with secure reset token
- * 
- * =============================================================================
- */
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
@@ -28,6 +9,7 @@ import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 
 interface ForgotPasswordPageProps {
@@ -39,6 +21,7 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
   const [email, setEmail] = useState('');
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
 
   const handleResetRequest = async () => {
@@ -62,6 +45,7 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
 
       toast.success('Password reset email sent!');
       onPasswordReset(email);
+      navigate('/reset-link-sent');
       
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
@@ -80,7 +64,7 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
               variant="ghost"
               size="sm"
               className="w-fit mb-2"
-              onClick={() => onNavigate('login')}
+              onClick={() => navigate('/login')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Login
@@ -119,7 +103,7 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
               Remember your password?{' '}
               <button
                 type="button"
-                onClick={() => onNavigate('login')}
+                onClick={() => navigate('/login')}
                 className="text-blue-600 hover:underline font-medium"
               >
                 Back to Login

@@ -1,24 +1,3 @@
-/**
- * =============================================================================
- * LOGIN PAGE COMPONENT
- * =============================================================================
- * 
- * This component handles user login functionality via backend API.
- * 
- * HOW IT WORKS:
- * 1. User enters email and password
- * 2. Frontend sends credentials to backend API
- * 3. Backend validates and creates session
- * 4. Frontend receives user data and navigates to dashboard
- * 
- * AUTHENTICATION:
- * - Uses API-based authentication (backend not yet implemented)
- * - Session management handled by backend (cookies/JWT)
- * 
- * =============================================================================
- */
-
-
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
@@ -30,7 +9,7 @@ import type { Page, User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
-
+import { useNavigate } from 'react-router-dom';
 
 // =============================================================================
 // COMPONENT PROPS
@@ -54,6 +33,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
   const [password, setPassword] = useState('');     // User's password input
   const [chatbotOpen, setChatbotOpen] = useState(false);  // Help chatbot visibility
   const [loading, setLoading] = useState(false);    // Loading state during login
+  const navigate = useNavigate();
 
   // ---------------------------------------------------------------------------
   // LOGIN HANDLER
@@ -91,6 +71,9 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
         password,
         gender: user.user_metadata?.gender ?? '',
       });
+
+      navigate('/dashboard');
+
     } catch (error) {
       console.error('[AUTH] Login error:', error);
       toast.error('Something went wrong');
@@ -127,7 +110,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
               variant="ghost"
               size="sm"
               className="w-fit mb-2"
-              onClick={() => onNavigate('welcome')}
+              onClick={() => navigate('/')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -180,7 +163,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => onNavigate('forgot-password')}
+                onClick={() => navigate('/forgot-password')}
                 className="text-sm text-blue-600 hover:underline"
               >
                 Forgot Password?
@@ -192,7 +175,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
               Don't have an account?{' '}
               <button
                 type="button"
-                onClick={() => onNavigate('register')}
+                onClick={() => navigate('/register')}
                 className="text-blue-600 hover:underline font-medium"
               >
                 Register here
