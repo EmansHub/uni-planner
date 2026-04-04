@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
@@ -40,7 +40,25 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
   const [chatbotOpen, setChatbotOpen] = useState(false);          // Help chatbot visibility
   const [loading, setLoading] = useState(false);                  // Loading state
   const navigate = useNavigate();
+  const [programs, setPrograms] = useState<{ code: string; name: string }[]>([]);
 
+  useEffect(() => {
+    const fetchPrograms = async () => {
+      const { data, error } = await supabase
+        .from('degree_programs')
+        .select('code, name')
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching programs:', error);
+        return;
+      }
+
+      setPrograms(data || []);
+    };
+
+    fetchPrograms();
+  }, []);
   // ---------------------------------------------------------------------------
   // REGISTRATION HANDLER
   // ---------------------------------------------------------------------------
@@ -174,33 +192,16 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
             {/* Major dropdown */}
             <div className="space-y-2">
               <Label htmlFor="major">Major</Label>
-              <Select value={major} onValueChange={setMajor} disabled={loading}>
-                <SelectTrigger id="major">
+              <Select value={major} onValueChange={setMajor}>
+                <SelectTrigger>
                   <SelectValue placeholder="Select your major" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Accounting">Accounting</SelectItem>
-                  <SelectItem value="Architecture">Architecture</SelectItem>
-                  <SelectItem value="Artificial Intelligence">Artificial Intelligence</SelectItem>
-                  <SelectItem value="Business Administration">Business Administration</SelectItem>
-                  <SelectItem value="Chemical Engineering">Chemical Engineering</SelectItem>
-                  <SelectItem value="Civil Engineering">Civil Engineering</SelectItem>
-                  <SelectItem value="Computer Engineering">Computer Engineering</SelectItem>
-                  <SelectItem value="Computer Science">Computer Science</SelectItem>
-                  <SelectItem value="Cybersecurity">Cybersecurity</SelectItem>
-                  <SelectItem value="Electrical Engineering">Electrical Engineering</SelectItem>
-                  <SelectItem value="Finance">Finance</SelectItem>
-                  <SelectItem value="Graphic Design">Graphic Design</SelectItem>
-                  <SelectItem value="Human Resource Management">Human Resource Management</SelectItem>
-                  <SelectItem value="Information Technology">Information Technology</SelectItem>
-                  <SelectItem value="Interior Design">Interior Design</SelectItem>
-                  <SelectItem value="Law">Law</SelectItem>
-                  <SelectItem value="Management Information Systems">Management Information Systems</SelectItem>
-                  <SelectItem value="Marketing">Marketing</SelectItem>
-                  <SelectItem value="Mechanical Engineering">Mechanical Engineering</SelectItem>
-                  <SelectItem value="Nursing">Nursing</SelectItem>
-                  <SelectItem value="Pharmacy">Pharmacy</SelectItem>
-                  <SelectItem value="Software Engineering">Software Engineering</SelectItem>
+                  {programs.map((program) => (
+                    <SelectItem key={program.code} value={program.code}>
+                      {program.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -10,8 +10,8 @@ import { EditPasswordPage } from './pages/EditPasswordPage';
 import { Toaster } from './ui/sonner'; 
 import { ResetLinkSentPage } from './pages/ResetLinkSentPage';
 import { supabase } from './lib/supabase';
-import { Routes, Route, Await } from 'react-router-dom';
-
+import { Routes, Route } from 'react-router-dom';
+import { SemesterSchedule } from './pages/SemesterSchedule';
 
 export type Page =
   | 'welcome'
@@ -292,6 +292,34 @@ function App() {
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
+        <Route
+          path="/semester-schedule"
+          element={
+            currentUser ? (
+              <SemesterSchedule
+                user={currentUser}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={async (user) => {
+                  console.log('Logged in user:', user);
+
+                  const { data } = await supabase.auth.getUser();
+                  const authUser = data.user;
+
+                  if (authUser) {
+                    await loadUserProfile(authUser);
+                  } else {
+                    setCurrentUser(user);
+                  }
+
                   setCurrentPage('dashboard');
                 }}
               />
