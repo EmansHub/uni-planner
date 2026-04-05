@@ -6,20 +6,56 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ArrowLeft, Plus, FolderOpen, Trash2, Star } from 'lucide-react';
 import type { Page, DegreePlan } from '../App';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase';
 
 interface PlanSelectionProps {
-  onNavigate: (page: Page) => void;
   onSelectPlan: (planId: string | null) => void;
 }
-
-export function PlanSelection({ onNavigate, onSelectPlan }: PlanSelectionProps) {
+[]
+export function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
   const [savedPlans, setSavedPlans] = useState<DegreePlan[]>([]);
   const [planToDelete, setPlanToDelete] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    setSavedPlans(plans);
+useEffect(() => {
+    loadPlans();
   }, []);
+
+  const loadPlans = async () => {
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+
+    if (!authUser) {
+      toast.error('You must be logged in');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('degree_plans')
+      .select(`
+        id,
+        name,
+        is_default,
+        degree_plan_semesters (
+          semester_key,
+          completed,
+          degree_plan_semester_courses (
+            course_id
+          )
+        )
+      `)
+      .eq('user_id', authUser.id)
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Error loading plans:', error);
+      toast.error('Failed to load plans');
+      return;
+    }
+
+    setSavedPlans(data || []);
+  };
 
   const handleStartNewPlan = () => {
     // Clear all course selection state when starting a new plan
@@ -30,40 +66,66 @@ export function PlanSelection({ onNavigate, onSelectPlan }: PlanSelectionProps) 
     sessionStorage.removeItem('editingPlanId');
     
     onSelectPlan(null);
-    onNavigate('course-selection');
+    navigate('/course-selection');
   };
 
   const handleSelectPlan = (planId: string) => {
     onSelectPlan(planId);
-    onNavigate('saved-plan-view');
+    navigate('/saved-plan-view');
   };
 
-  const handleDeletePlan = (planId: string) => {
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const updatedPlans = plans.filter((p: DegreePlan) => p.id !== planId);
-    localStorage.setItem('degreePlans', JSON.stringify(updatedPlans));
-    
-    // If deleted plan was default, clear default
-    const defaultPlanId = localStorage.getItem('defaultPlanId');
-    if (defaultPlanId === planId) {
-      localStorage.removeItem('defaultPlanId');
+  const handleDeletePlan = async (planId: string) => {
+    const { error } = await supabase
+      .from('degree_plans')
+      .delete()
+      .eq('id', Number(planId));
+
+    if (error) {
+      console.error('Error deleting plan:', error);
+      toast.error('Failed to delete plan');
+      return;
     }
-    
-    setSavedPlans(updatedPlans);
+
+    await loadPlans();
     setPlanToDelete(null);
     toast.success('Plan deleted successfully');
   };
 
-  const handleSetDefault = (e: React.MouseEvent, planId: string) => {
+  const handleSetDefault = async (e: React.MouseEvent, planId: string) => {
     e.stopPropagation();
-    localStorage.setItem('defaultPlanId', planId);
-    toast.success('Set as default plan');
-    // Force re-render
-    setSavedPlans([...savedPlans]);
-  };
 
-  const isDefaultPlan = (planId: string) => {
-    return localStorage.getItem('defaultPlanId') === planId;
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+
+    if (!authUser) {
+      toast.error('You must be logged in');
+      return;
+    }
+
+    const { error: clearError } = await supabase
+      .from('degree_plans')
+      .update({ is_default: false })
+      .eq('user_id', authUser.id);
+
+    if (clearError) {
+      console.error('Error clearing default plan:', clearError);
+      toast.error('Failed to update default plan');
+      return;
+    }
+
+    const { error: setError } = await supabase
+      .from('degree_plans')
+      .update({ is_default: true })
+      .eq('id', Number(planId));
+
+    if (setError) {
+      console.error('Error setting default plan:', setError);
+      toast.error('Failed to set default plan');
+      return;
+    }
+
+    await loadPlans();
+    toast.success('Set as default plan');
   };
 
   return (
@@ -72,7 +134,7 @@ export function PlanSelection({ onNavigate, onSelectPlan }: PlanSelectionProps) 
         <Button
           variant="ghost"
           className="mb-4"
-          onClick={() => onNavigate('dashboard')}
+          onClick={() => navigate('/dashboard')}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
@@ -108,14 +170,18 @@ export function PlanSelection({ onNavigate, onSelectPlan }: PlanSelectionProps) 
                 <h2 className="text-xl mb-4">Saved Plans</h2>
               </div>
               {savedPlans.map((plan) => {
-                const totalCourses = Object.values(plan.semesters).reduce(
-                  (sum, semester) => sum + semester.courses.length,
+                const semesters = plan.degree_plan_semesters || [];
+                const totalCourses = semesters.reduce(
+                  (sum: number, semester: any) =>
+                    sum + (semester.degree_plan_semester_courses?.length || 0),
                   0
                 );
-                const completedSemesters = Object.values(plan.semesters).filter(
-                  (s) => s.completed
+
+                const completedSemesters = semesters.filter(
+                  (s: any) => s.completed
                 ).length;
-                const isDefault = isDefaultPlan(plan.id);
+
+                const isDefault = !!plan.is_default;
 
                 return (
                   <Card
@@ -123,7 +189,7 @@ export function PlanSelection({ onNavigate, onSelectPlan }: PlanSelectionProps) 
                     className={`cursor-pointer hover:shadow-lg transition-shadow ${
                       isDefault ? 'border-2 border-[#E87722]' : ''
                     }`}
-                    onClick={() => handleSelectPlan(plan.id)}
+                    onClick={() => handleSelectPlan(String(plan.id))}
                   >
                     <CardHeader className="pb-6">
                       <div className="flex items-center gap-4">

@@ -4,16 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, Home, Upload } from 'lucide-react';
-import type { Page, User, Course } from '../App';
-import { ScrollArea } from '../ui/scroll-area';
+import type { User } from '../App';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { Separator } from '../ui/separator';
 import { toast } from 'sonner';
 import { TranscriptUpload } from '../components/TranscriptUpload';
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase';
 
 interface CourseSelectionPageProps {
   user: User;
-  onNavigate: (page: Page) => void;
+  onContinue: (planID: string | null) => void;
 }
 
 interface CourseSection {
@@ -24,306 +25,188 @@ interface CourseSection {
   maxElectives?: number;
 }
 
-// Computer Science curriculum for PMU
-const getComputerScienceCourses = (): CourseSection[] => {
-  return [
-    {
-      title: 'Preparation Program',
-      courses: [
-        { id: 'PRPM0011', code: 'PRPM 0011', name: 'Introductory Algebra', credits: 0, semesterHours: 4, department: 'PRPM', isPrepCourse: true },
-        { id: 'PRPM0022', code: 'PRPM 0022', name: 'Pre-Calculus', credits: 0, semesterHours: 4, department: 'PRPM', isPrepCourse: true, prerequisites: ['PRPM0011'] },
-      ],
-    },
-    {
-      title: 'Core Curriculum',
-      courses: [
-        { id: 'ALIS1211', code: 'ALIS 1211', name: 'Introduction to Islamic Culture', credits: 2, department: 'ALIS' },
-        { id: 'ALIS1212', code: 'ALIS 1212', name: 'The Social System in Islam', credits: 2, department: 'ALIS', prerequisites: ['ALIS1211'] },
-        { id: 'ALIS2211', code: 'ALIS 2211', name: 'Linguistic Communication Skills', credits: 2, department: 'ALIS', prerequisites: ['ALIS1212'] },
-        { id: 'ALIS2212', code: 'ALIS 2212', name: 'The Biography of Prophet Mohammad', credits: 2, department: 'ALIS', prerequisites: ['ALIS2211'] },
-        { id: 'ASSE2111', code: 'ASSE 2111', name: 'Learning Outcome Assessment I', credits: 1, department: 'ASSE', requiredHours: 30 },
-        { id: 'ASSE3211', code: 'ASSE 3211', name: 'Learning Outcome Assessment II', credits: 2, department: 'ASSE', prerequisites: ['ASSE2111'], requiredHours: 60 },
-        { id: 'COMM1311', code: 'COMM 1311', name: 'Written Communication', credits: 3, department: 'COMM' },
-        { id: 'COMM1312', code: 'COMM 1312', name: 'Writing and Research', credits: 3, department: 'COMM', prerequisites: ['COMM1311'] },
-        { id: 'COMM2311', code: 'COMM 2311', name: 'Oral Communication', credits: 3, department: 'COMM', prerequisites: ['COMM1312'] },
-        { id: 'COMM2312', code: 'COMM 2312', name: 'Technical and Professional Communication', credits: 3, department: 'COMM', prerequisites: ['COMM2311'] },
-        { id: 'PHED1111', code: 'PHED 1111', name: 'Active Living Lifestyle', credits: 1, department: 'PHED' },
-        { id: 'PHED1112', code: 'PHED 1112', name: 'Healthy Behaviors & Management', credits: 1, department: 'PHED', prerequisites: ['PHED1111'] },
-        { id: 'UNIV1211', code: 'UNIV 1211', name: 'Professional Development and Competencies', credits: 2, department: 'UNIV' },
-        { id: 'UNIV1212', code: 'UNIV 1212', name: 'Critical Thinking and Problem Solving', credits: 2, department: 'UNIV', prerequisites: ['UNIV1211'] },
-        { id: 'UNIV1213', code: 'UNIV 1213', name: 'Leadership and Teamwork', credits: 2, department: 'UNIV', prerequisites: ['UNIV1212'] },
-      ],
-    },
-    {
-      title: 'Degree Specific Core',
-      courses: [
-        { id: 'ASSE4311', code: 'ASSE 4311', name: 'Learning Outcome Assessment III', credits: 3, department: 'ASSE', prerequisites: ['ASSE3211'], requiredHours: 90 },
-        { id: 'MATH1422', code: 'MATH 1422', name: 'Calculus I', credits: 4, department: 'MATH', prerequisites: ['PRPM0022'] },
-        { id: 'MATH1423', code: 'MATH 1423', name: 'Calculus II', credits: 4, department: 'MATH', prerequisites: ['MATH1422'] },
-        { id: 'MATH1324', code: 'MATH 1324', name: 'Calculus III', credits: 3, department: 'MATH', prerequisites: ['MATH1423'] },
-        { id: 'MATH3433', code: 'MATH 3433', name: 'Linear Algebra and Differential Equations', credits: 4, department: 'MATH', prerequisites: ['MATH1423'] },
-        { id: 'MATH2313', code: 'MATH 2313', name: 'Probability and Statistics', credits: 3, department: 'MATH', prerequisites: ['MATH1423'] },
-        { id: 'PHYS1421', code: 'PHYS 1421', name: 'Physics for Engineers I', credits: 4, department: 'PHYS', prerequisites: ['PRPM0022'] },
-        { id: 'PHYS1422', code: 'PHYS 1422', name: 'Physics for Engineers II', credits: 4, department: 'PHYS', prerequisites: ['PHYS1421', 'MATH1422'] },
-      ],
-    },
-    {
-      title: 'Social Science Electives',
-      isElective: true,
-      electiveNote: '2 required (6 credits total)',
-      maxElectives: 2,
-      courses: [
-        { id: 'FREN1311', code: 'FREN 1311', name: 'Introduction to French Language', credits: 3, department: 'FREN' },
-        { id: 'FURS1311', code: 'FURS 1311', name: 'Introduction to Futures Skills', credits: 3, department: 'FURS' },
-        { id: 'FUTR1311', code: 'FUTR 1311', name: 'Introduction to Futures Studies', credits: 3, department: 'FUTR' },
-        { id: 'GEGR1311', code: 'GEGR 1311', name: 'World Regional Geography', credits: 3, department: 'GEGR' },
-        { id: 'HIST1311', code: 'HIST 1311', name: 'World Civilizations', credits: 3, department: 'HIST' },
-        { id: 'PSYC1311', code: 'PSYC 1311', name: 'Introduction to Psychology', credits: 3, department: 'PSYC' },
-        { id: 'SERV1311', code: 'SERV 1311', name: 'Introduction to Service Learning and Volunteering', credits: 3, department: 'SERV' },
-        { id: 'SPAN1311', code: 'SPAN 1311', name: 'Introduction to Spanish Language', credits: 3, department: 'SPAN' },
-        { id: 'SUST1311', code: 'SUST 1311', name: 'Introduction to Sustainability', credits: 3, department: 'SUST' },
-        { id: 'SYST1311', code: 'SYST 1311', name: 'Introduction to Systems Thinking', credits: 3, department: 'SYST' },
-        { id: 'BSTW1311', code: 'BSTW 1311', name: 'Behavioral Sciences in 3D World', credits: 3, department: 'BSTW' },
-        { id: 'DANT1311', code: 'DANT 1311', name: 'Digital Anthropology', credits: 3, department: 'DANT' },
-        { id: 'ECON1311', code: 'ECON 1311', name: 'Introduction to Macroeconomics', credits: 3, department: 'ECON' },
-        { id: 'ECON1312', code: 'ECON 1312', name: 'Introduction to Microeconomics', credits: 3, department: 'ECON' },
-      ],
-    },
-    {
-      title: 'Natural Science Electives',
-      isElective: true,
-      electiveNote: '1 required (4 credits)',
-      maxElectives: 1,
-      courses: [
-        { id: 'BIOL1411', code: 'BIOL 1411', name: 'Introductory Biology', credits: 4, department: 'BIOL' },
-        { id: 'CHEM1411', code: 'CHEM 1411', name: 'Introductory Chemistry', credits: 4, department: 'CHEM' },
-        { id: 'CHEM1421', code: 'CHEM 1421', name: 'Chemistry for Engineers I', credits: 4, department: 'CHEM' },
-        { id: 'CHEM1422', code: 'CHEM 1422', name: 'Chemistry for Engineers II', credits: 4, department: 'CHEM', prerequisites: ['CHEM1421'] },
-        { id: 'GEOL1411', code: 'GEOL 1411', name: 'Introductory Geology', credits: 4, department: 'GEOL' },
-      ],
-    },
-    {
-      title: 'Computer Engineering & Science Core',
-      courses: [
-        { id: 'GEIT1411', code: 'GEIT 1411', name: 'Computer Science I', credits: 4, department: 'GEIT' },
-        { id: 'GEIT1412', code: 'GEIT 1412', name: 'Computer Science II', credits: 4, department: 'GEIT', prerequisites: ['GEIT1411'] },
-        { id: 'GEIT2421', code: 'GEIT 2421', name: 'Data Structures', credits: 4, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT2331', code: 'GEIT 2331', name: 'Mathematical Reasoning & Algorithmic Thinking', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT2291', code: 'GEIT 2291', name: 'Professional Ethics', credits: 2, department: 'GEIT' },
-        { id: 'GEIT3341', code: 'GEIT 3341', name: 'Database I', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT3331', code: 'GEIT 3331', name: 'Computer Organization', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT3351', code: 'GEIT 3351', name: 'Principles of Software Engineering', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT4361', code: 'GEIT 4361', name: 'Internship', credits: 3, department: 'GEIT', requiredHours: 90, mustBeAlone: true },
-      ],
-    },
-    {
-      title: 'Major in Computer Science',
-      courses: [
-        { id: 'COSC2312', code: 'COSC 2312', name: 'Web Programming', credits: 3, department: 'COSC', prerequisites: ['GEIT1411'] },
-        { id: 'COSC3332', code: 'COSC 3332', name: 'Discrete Structures & Combinatorial Analysis', credits: 3, department: 'COSC', prerequisites: ['GEIT2331'] },
-        { id: 'COSC3361', code: 'COSC 3361', name: 'Computer Networks', credits: 3, department: 'COSC', prerequisites: ['MATH2313', 'GEIT2421'] },
-        { id: 'COSC3351', code: 'COSC 3351', name: 'Algorithms', credits: 3, department: 'COSC', prerequisites: ['GEIT2421'] },
-        { id: 'COSC3411', code: 'COSC 3411', name: 'Systems Programming', credits: 4, department: 'COSC', prerequisites: ['GEIT3331'] },
-        { id: 'COSC4361', code: 'COSC 4361', name: 'Operating Systems', credits: 3, department: 'COSC', prerequisites: ['COSC3411'] },
-        { id: 'COSC4461', code: 'COSC 4461', name: 'Programming Languages', credits: 4, department: 'COSC', prerequisites: ['COSC3411'] },
-        { id: 'COSC4362', code: 'COSC 4362', name: 'Artificial Intelligence', credits: 3, department: 'COSC', prerequisites: ['COSC3351'] },
-        { id: 'COSC4363', code: 'COSC 4363', name: 'Theory of Computation', credits: 3, department: 'COSC', prerequisites: ['COSC3351', 'MATH3433'] },
-      ],
-    },
-    {
-      title: 'Computer Science Electives',
-      isElective: true,
-      electiveNote: '3 required (9 credits total)',
-      maxElectives: 3,
-      courses: [
-        { id: 'COSC3354', code: 'COSC 3354', name: 'Introduction to Cryptography', credits: 3, department: 'COSC' },
-        { id: 'COSC4371', code: 'COSC 4371', name: 'Computer Graphics', credits: 3, department: 'COSC' },
-        { id: 'COSC4373', code: 'COSC 4373', name: 'Computer Vision', credits: 3, department: 'COSC' },
-        { id: 'COSC4393', code: 'COSC 4393', name: 'Special Topics – I', credits: 3, department: 'COSC' },
-        { id: 'COSC4398', code: 'COSC 4398', name: 'Special Topics – II', credits: 3, department: 'COSC' },
-        { id: 'ITAP3313', code: 'ITAP 3313', name: 'User Interface Development', credits: 3, department: 'ITAP' },
-        { id: 'ITAP3371', code: 'ITAP 3371', name: 'Database II', credits: 3, department: 'ITAP', prerequisites: ['GEIT3341'] },
-        { id: 'ITAP4371', code: 'ITAP 4371', name: 'e-Commerce', credits: 3, department: 'ITAP' },
-      ],
-    },
-  ];
-};
+interface Course {
+  id: string;
+  code: string;
+  name: string;
+  credits: number;
+  department: string;
+  semesterHours?: number;
+  isPrepCourse?: boolean;
+  prerequisites?: string[];
+  requiredHours?: number;
+  mustBeAlone?: boolean;
+  isElectiveOption?: boolean;
+  electiveCategory?: string;
+  maxElectivesAllowed?: number;
+}
 
-// Software Engineering curriculum for PMU
-const getSoftwareEngineeringCourses = (): CourseSection[] => {
-  return [
-    {
-      title: 'Preparation Program',
-      courses: [
-        { id: 'PRPM0011', code: 'PRPM 0011', name: 'Introductory Algebra', credits: 0, semesterHours: 4, department: 'PRPM', isPrepCourse: true },
-        { id: 'PRPM0022', code: 'PRPM 0022', name: 'Pre-Calculus', credits: 0, semesterHours: 4, department: 'PRPM', isPrepCourse: true, prerequisites: ['PRPM0011'] },
-      ],
-    },
-    {
-      title: 'Core Curriculum',
-      courses: [
-        { id: 'ALIS1211', code: 'ALIS 1211', name: 'Introduction to Islamic Culture', credits: 2, department: 'ALIS' },
-        { id: 'ALIS1212', code: 'ALIS 1212', name: 'The Social System in Islam', credits: 2, department: 'ALIS', prerequisites: ['ALIS1211'] },
-        { id: 'ALIS2211', code: 'ALIS 2211', name: 'Linguistic Communication Skills', credits: 2, department: 'ALIS', prerequisites: ['ALIS1212'] },
-        { id: 'ALIS2212', code: 'ALIS 2212', name: 'The Biography of Prophet Mohammad', credits: 2, department: 'ALIS', prerequisites: ['ALIS2211'] },
-        { id: 'ASSE2111', code: 'ASSE 2111', name: 'Learning Outcome Assessment I', credits: 1, department: 'ASSE', requiredHours: 30 },
-        { id: 'ASSE3211', code: 'ASSE 3211', name: 'Learning Outcome Assessment II', credits: 2, department: 'ASSE', prerequisites: ['ASSE2111'], requiredHours: 60 },
-        { id: 'COMM1311', code: 'COMM 1311', name: 'Written Communication', credits: 3, department: 'COMM' },
-        { id: 'COMM1312', code: 'COMM 1312', name: 'Writing and Research', credits: 3, department: 'COMM', prerequisites: ['COMM1311'] },
-        { id: 'COMM2311', code: 'COMM 2311', name: 'Oral Communication', credits: 3, department: 'COMM', prerequisites: ['COMM1312'] },
-        { id: 'COMM2312', code: 'COMM 2312', name: 'Technical and Professional Communication', credits: 3, department: 'COMM', prerequisites: ['COMM2311'] },
-        { id: 'PHED1111', code: 'PHED 1111', name: 'Active Living Lifestyle', credits: 1, department: 'PHED' },
-        { id: 'PHED1112', code: 'PHED 1112', name: 'Healthy Behaviors & Management', credits: 1, department: 'PHED', prerequisites: ['PHED1111'] },
-        { id: 'UNIV1211', code: 'UNIV 1211', name: 'Professional Development and Competencies', credits: 2, department: 'UNIV' },
-        { id: 'UNIV1212', code: 'UNIV 1212', name: 'Critical Thinking and Problem Solving', credits: 2, department: 'UNIV', prerequisites: ['UNIV1211'] },
-        { id: 'UNIV1213', code: 'UNIV 1213', name: 'Leadership and Teamwork', credits: 2, department: 'UNIV', prerequisites: ['UNIV1212'] },
-      ],
-    },
-    {
-      title: 'Degree Specific Core',
-      courses: [
-        { id: 'ASSE4311', code: 'ASSE 4311', name: 'Learning Outcome Assessment III', credits: 3, department: 'ASSE', prerequisites: ['ASSE3211'], requiredHours: 90 },
-        { id: 'MATH1422', code: 'MATH 1422', name: 'Calculus I', credits: 4, department: 'MATH', prerequisites: ['PRPM0022'] },
-        { id: 'MATH1423', code: 'MATH 1423', name: 'Calculus II', credits: 4, department: 'MATH', prerequisites: ['MATH1422'] },
-        { id: 'MATH1324', code: 'MATH 1324', name: 'Calculus III', credits: 3, department: 'MATH', prerequisites: ['MATH1423'] },
-        { id: 'MATH2313', code: 'MATH 2313', name: 'Probability and Statistics', credits: 3, department: 'MATH', prerequisites: ['MATH1423'] },
-        { id: 'PHYS1421', code: 'PHYS 1421', name: 'Physics for Engineers I', credits: 4, department: 'PHYS', prerequisites: ['PRPM0022'] },
-        { id: 'PHYS1422', code: 'PHYS 1422', name: 'Physics for Engineers II', credits: 4, department: 'PHYS', prerequisites: ['PHYS1421', 'MATH1422'] },
-      ],
-    },
-    {
-      title: 'Social Science Electives',
-      isElective: true,
-      electiveNote: '2 required (6 credits total)',
-      maxElectives: 2,
-      courses: [
-        { id: 'FREN1311', code: 'FREN 1311', name: 'Introduction to French Language', credits: 3, department: 'FREN' },
-        { id: 'FURS1311', code: 'FURS 1311', name: 'Introduction to Futures Skills', credits: 3, department: 'FURS' },
-        { id: 'FUTR1311', code: 'FUTR 1311', name: 'Introduction to Futures Studies', credits: 3, department: 'FUTR' },
-        { id: 'GEGR1311', code: 'GEGR 1311', name: 'World Regional Geography', credits: 3, department: 'GEGR' },
-        { id: 'HIST1311', code: 'HIST 1311', name: 'World Civilizations', credits: 3, department: 'HIST' },
-        { id: 'PSYC1311', code: 'PSYC 1311', name: 'Introduction to Psychology', credits: 3, department: 'PSYC' },
-        { id: 'SERV1311', code: 'SERV 1311', name: 'Introduction to Service Learning and Volunteering', credits: 3, department: 'SERV' },
-        { id: 'SPAN1311', code: 'SPAN 1311', name: 'Introduction to Spanish Language', credits: 3, department: 'SPAN' },
-        { id: 'SUST1311', code: 'SUST 1311', name: 'Introduction to Sustainability', credits: 3, department: 'SUST' },
-        { id: 'SYST1311', code: 'SYST 1311', name: 'Introduction to Systems Thinking', credits: 3, department: 'SYST' },
-        { id: 'BSTW1311', code: 'BSTW 1311', name: 'Behavioral Sciences in 3D World', credits: 3, department: 'BSTW' },
-        { id: 'DANT1311', code: 'DANT 1311', name: 'Digital Anthropology', credits: 3, department: 'DANT' },
-        { id: 'ECON1311', code: 'ECON 1311', name: 'Introduction to Macroeconomics', credits: 3, department: 'ECON' },
-        { id: 'ECON1312', code: 'ECON 1312', name: 'Introduction to Microeconomics', credits: 3, department: 'ECON' },
-      ],
-    },
-    {
-      title: 'Natural Science Electives',
-      isElective: true,
-      electiveNote: '1 required (4 credits)',
-      maxElectives: 1,
-      courses: [
-        { id: 'BIOL1411', code: 'BIOL 1411', name: 'Introductory Biology', credits: 4, department: 'BIOL' },
-        { id: 'CHEM1411', code: 'CHEM 1411', name: 'Introductory Chemistry', credits: 4, department: 'CHEM' },
-        { id: 'CHEM1421', code: 'CHEM 1421', name: 'Chemistry for Engineers I', credits: 4, department: 'CHEM' },
-        { id: 'CHEM1422', code: 'CHEM 1422', name: 'Chemistry for Engineers II', credits: 4, department: 'CHEM', prerequisites: ['CHEM1421'] },
-        { id: 'GEOL1411', code: 'GEOL 1411', name: 'Introductory Geology', credits: 4, department: 'GEOL' },
-      ],
-    },
-    {
-      title: 'Computer Engineering & Science Core',
-      courses: [
-        { id: 'GEIT1411', code: 'GEIT 1411', name: 'Computer Science I', credits: 4, department: 'GEIT' },
-        { id: 'GEIT1412', code: 'GEIT 1412', name: 'Computer Science II', credits: 4, department: 'GEIT', prerequisites: ['GEIT1411'] },
-        { id: 'GEIT2421', code: 'GEIT 2421', name: 'Data Structures', credits: 4, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT2331', code: 'GEIT 2331', name: 'Mathematical Reasoning & Algorithmic Thinking', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT2291', code: 'GEIT 2291', name: 'Professional Ethics', credits: 2, department: 'GEIT' },
-        { id: 'GEIT3341', code: 'GEIT 3341', name: 'Database I', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT3331', code: 'GEIT 3331', name: 'Computer Organization', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT3351', code: 'GEIT 3351', name: 'Principles of Software Engineering', credits: 3, department: 'GEIT', prerequisites: ['GEIT1412'] },
-        { id: 'GEIT4361', code: 'GEIT 4361', name: 'Internship', credits: 3, department: 'GEIT', requiredHours: 90, mustBeAlone: true },
-      ],
-    },
-    {
-      title: 'Major in Software Engineering',
-      courses: [
-        { id: 'SOEN2312', code: 'SOEN 2312', name: 'Web Programming', credits: 3, department: 'SOEN', prerequisites: ['GEIT1411'] },
-        { id: 'SOEN2332', code: 'SOEN 2332', name: 'Discrete Structures and Combinatorial Analysis', credits: 3, department: 'SOEN', prerequisites: ['GEIT2331'] },
-        { id: 'SOEN3311', code: 'SOEN 3311', name: 'Requirements Engineering', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN3351', code: 'SOEN 3351', name: 'Algorithms', credits: 3, department: 'SOEN', prerequisites: ['GEIT2421'] },
-        { id: 'SOEN4361', code: 'SOEN 4361', name: 'Operating Systems', credits: 3, department: 'SOEN', prerequisites: ['GEIT3331'] },
-        { id: 'SOEN4371', code: 'SOEN 4371', name: 'E-Commerce', credits: 3, department: 'SOEN', prerequisites: ['GEIT3341'] },
-        { id: 'SOEN4311', code: 'SOEN 4311', name: 'Software Architecture and Design', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN4312', code: 'SOEN 4312', name: 'Software Testing and Quality Assurance', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN4313', code: 'SOEN 4313', name: 'Software Project Management', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-      ],
-    },
-    {
-      title: 'Software Engineering Electives (3 credits)',
-      isElective: true,
-      electiveNote: '1 required (3 credits)',
-      maxElectives: 1,
-      courses: [
-        { id: 'SOEN4321', code: 'SOEN 4321', name: 'Software Maintenance and Evolution', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN4322', code: 'SOEN 4322', name: 'Software Security', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN3314', code: 'SOEN 3314', name: 'Formal Methods in Software Engineering', credits: 3, department: 'SOEN', prerequisites: ['GEIT3351'] },
-        { id: 'SOEN3321', code: 'SOEN 3321', name: 'Programming in UNIX Environments', credits: 3, department: 'SOEN', prerequisites: ['GEIT3331'] },
-        { id: 'SOEN4316', code: 'SOEN 4316', name: 'Concurrent Programming', credits: 3, department: 'SOEN', prerequisites: ['GEIT2421'] },
-        { id: 'SOEN4315', code: 'SOEN 4315', name: 'Cloud Computing', credits: 3, department: 'SOEN', prerequisites: ['GEIT3341'] },
-        { id: 'SOEN3361', code: 'SOEN 3361', name: 'Computer Networks', credits: 3, department: 'SOEN', prerequisites: ['GEIT2421'] },
-      ],
-    },
-    {
-      title: 'Software Engineering Electives (4 credits)',
-      isElective: true,
-      electiveNote: '1 required (4 credits)',
-      maxElectives: 1,
-      courses: [
-        { id: 'SOEN4463', code: 'SOEN 4463', name: 'Data Mining', credits: 4, department: 'SOEN', prerequisites: ['GEIT2421'] },
-        { id: 'SOEN3463', code: 'SOEN 3463', name: 'Distributed Systems', credits: 4, department: 'SOEN', prerequisites: ['GEIT3331'] },
-        { id: 'SOEN4461', code: 'SOEN 4461', name: 'Programming Languages', credits: 4, department: 'SOEN', prerequisites: ['GEIT2421'] },
-      ],
-    },
-  ];
-};
-
-// Mock course data based on major
-const getCoursesByMajor = (major: string): CourseSection[] => {
-  if (major === 'Computer Science') {
-    return getComputerScienceCourses();
-  }
-  
-  if (major === 'Software Engineering') {
-    return getSoftwareEngineeringCourses();
-  }
-  
-  // For other majors, return a simple structure with generic courses
-  const genericCourses: Course[] = [
-    { id: 'GEN101', code: 'GEN 101', name: 'Introduction to Major', credits: 3, department: 'GEN' },
-    { id: 'GEN102', code: 'GEN 102', name: 'Fundamentals I', credits: 3, department: 'GEN' },
-    { id: 'GEN201', code: 'GEN 201', name: 'Intermediate Studies', credits: 3, department: 'GEN' },
-    { id: 'GEN301', code: 'GEN 301', name: 'Advanced Topics', credits: 3, department: 'GEN' },
-    { id: 'GEN401', code: 'GEN 401', name: 'Capstone Project', credits: 3, department: 'GEN' },
-  ];
-
-  return [
-    {
-      title: 'Major Courses',
-      courses: genericCourses,
-    },
-  ];
-};
-
-export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPageProps) {
-  const courseSections = getCoursesByMajor(user.major);
+export function CourseSelectionPage({ user, onContinue }: CourseSelectionPageProps) {
+  const navigate = useNavigate();
+  const [courseSections, setCourseSections] = useState<CourseSection[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
   const [completedCourses, setCompletedCourses] = useState<Set<string>>(new Set());
   const [currentCourses, setCurrentCourses] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(courseSections.filter(s => !s.isElective).map(s => s.title))
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [showTranscriptUpload, setShowTranscriptUpload] = useState(false);
 
+  const loadCourseSections = async () => {
+  setLoadingCourses(true);
+
+    const { data: sectionMetaRows, error: sectionMetaError } = await supabase
+    .from('curriculum_sections')
+    .select('degree_program_code, course_category, required_credits')
+    .eq('degree_program_code', user.major);
+
+    if (sectionMetaError) {
+    console.error('Error loading curriculum sections:', sectionMetaError);
+    toast.error('Failed to load curriculum sections');
+    setLoadingCourses(false);
+    return;
+    }
+
+    const sectionMetaMap = new Map<string, { requiredCredits: number }>();
+
+    (sectionMetaRows || []).forEach((row: any) => {
+    sectionMetaMap.set(row.course_category, {
+      requiredCredits: row.required_credits,
+    });
+    });
+
+    const { data: sectionRows, error: sectionError } = await supabase
+      .from('curriculum_section_courses')
+      .select(`
+        degree_program_code,
+        course_category,
+        course_id,
+        courses (
+          id,
+          name,
+          credits,
+          semester_hours,
+          required_hours,
+          must_be_alone
+        )
+      `)
+      .eq('degree_program_code', user.major);
+
+    if (sectionError) {
+      console.error('Error loading curriculum courses:', sectionError);
+      toast.error('Failed to load curriculum');
+      setLoadingCourses(false);
+      return;
+    }
+
+    const { data: prereqRows, error: prereqError } = await supabase
+      .from('course_prerequisites')
+      .select('course_id, prerequisite_course_id');
+
+    if (prereqError) {
+      console.error('Error loading prerequisites:', prereqError);
+      toast.error('Failed to load prerequisites');
+      setLoadingCourses(false);
+      return;
+    }
+
+    const prereqMap = new Map<string, string[]>();
+
+    (prereqRows || []).forEach((row: any) => {
+      const current = prereqMap.get(row.course_id) || [];
+      current.push(row.prerequisite_course_id);
+      prereqMap.set(row.course_id, current);
+    });
+
+    const grouped = new Map<string, Course[]>();
+
+    (sectionRows || []).forEach((row: any) => {
+      const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+      if (!courseInfo) return;
+
+      const course: Course = {
+        id: courseInfo.id,
+        code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+        name: courseInfo.name,
+        credits: courseInfo.credits,
+        department: courseInfo.id.replace(/\d+/g, ''),
+        semesterHours: courseInfo.semester_hours ?? undefined,
+        isPrepCourse: courseInfo.credits === 0,
+        prerequisites: prereqMap.get(courseInfo.id) || undefined,
+        requiredHours: courseInfo.required_hours ?? undefined,
+        mustBeAlone: courseInfo.must_be_alone ?? false,
+      };
+
+      const existing = grouped.get(row.course_category) || [];
+      existing.push(course);
+      grouped.set(row.course_category, existing);
+    });
+
+      const builtSections: CourseSection[] = Array.from(grouped.entries()).map(
+        ([title, courses]) => {
+          const meta = sectionMetaMap.get(title);
+          const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0);
+
+          const isElective =
+            title.toLowerCase().includes('elective');
+
+          let maxElectives: number | undefined;
+          let electiveNote: string | undefined;
+
+          if (isElective && meta?.requiredCredits) {
+            const sampleCredits = courses.find(c => c.credits > 0)?.credits || 3;
+            maxElectives = Math.ceil(meta.requiredCredits / sampleCredits);
+            electiveNote = `${maxElectives} required (${meta.requiredCredits} credits total)`;
+          }
+
+          return {
+            title,
+            courses,
+            isElective,
+            electiveNote,
+            maxElectives,
+          };
+        }
+      );
+    
+    const sectionOrder = [
+      'Preparation Program',
+      'Core Curriculum',
+      'Degree Specific Core',
+      'Social Science Electives',
+      'Natural Science Electives',
+      'College Core',
+      'Computer Engineering & Science Core',
+      'Major Core',
+      'Major in Computer Science',
+      'Major in Software Engineering',
+      'Major Electives',
+      'Computer Science Electives',
+      'Software Engineering Electives (3 credits)',
+      'Software Engineering Electives (4 credits)',
+    ];
+
+    builtSections.sort((a, b) => {
+      const aIndex = sectionOrder.indexOf(a.title);
+      const bIndex = sectionOrder.indexOf(b.title);
+
+      if (aIndex === -1 && bIndex === -1) return a.title.localeCompare(b.title);
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
+    
+    setCourseSections(builtSections);
+    setExpandedSections(
+      new Set(builtSections.filter(s => !s.isElective).map(s => s.title))
+    );
+    setLoadingCourses(false);
+  };
   // Load saved selections from sessionStorage
   useEffect(() => {
+    loadCourseSections();
+    
     const savedCompletedIds = JSON.parse(sessionStorage.getItem('completedCourses') || '[]');
     const savedCurrentIds = JSON.parse(sessionStorage.getItem('currentCourses') || '[]');
-    
+
     if (savedCompletedIds.length > 0) {
       setCompletedCourses(new Set(savedCompletedIds));
     }
@@ -533,7 +416,8 @@ export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPagePro
     sessionStorage.setItem('allElectiveOptions', JSON.stringify(allElectiveOptions));
     // Store original completed IDs so we can preserve them when saving the plan
     sessionStorage.setItem('originalCompletedIds', JSON.stringify(completedIds));
-    onNavigate('drag-drop-planning');
+    onContinue(null);
+    navigate('/drag-drop-planning');
   };
 
   const totalCredits = courseSections.flatMap(s => s.courses).reduce((sum, c) => sum + c.credits, 0);
@@ -546,20 +430,29 @@ export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPagePro
     .filter(c => currentCourses.has(c.id))
     .reduce((sum, c) => sum + c.credits, 0);
 
+  if (loadingCourses) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4 flex items-center justify-center">
+        <p>Loading curriculum...</p>
+      </div>
+    );
+  }
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
       <div className="container mx-auto max-w-5xl">
         <div className="flex gap-2 mb-4">
           <Button
             variant="ghost"
-            onClick={() => onNavigate('plan-selection')}
+            onClick={() => navigate('/plan-selection')}
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
           <Button
             variant="ghost"
-            onClick={() => onNavigate('dashboard')}
+            onClick={() => navigate('/dashboard')}
           >
             <Home className="w-4 h-4 mr-2" />
             Home
@@ -574,16 +467,9 @@ export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPagePro
                 <p className="text-slate-600">
                   Mark the courses you've already completed and the ones you're currently taking
                 </p>
-                {user.major === 'Computer Science' && (
                   <p className="text-sm text-slate-500 mt-2">
-                    Total credits required: 137
+                    Total credits in curriculum: {totalCredits}
                   </p>
-                )}
-                {user.major === 'Software Engineering' && (
-                  <p className="text-sm text-slate-500 mt-2">
-                    Total credits required: 133
-                  </p>
-                )}
               </div>
               <Button
                 variant="outline"
@@ -597,7 +483,7 @@ export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPagePro
             </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[500px] pr-4">
+            <div className="h-[500px] pr-4 overflow-y-auto">
               <div className="space-y-4">
                 {courseSections.map((section, sectionIndex) => {
                   const sectionCourseIds = section.courses.map(c => c.id);
@@ -767,7 +653,7 @@ export function CourseSelectionPage({ user, onNavigate }: CourseSelectionPagePro
                   );
                 })}
               </div>
-            </ScrollArea>
+            </div>
 
             <div className="mt-6 flex justify-between items-center">
               <div className="text-sm text-slate-600">

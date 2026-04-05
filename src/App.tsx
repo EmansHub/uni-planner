@@ -12,6 +12,10 @@ import { ResetLinkSentPage } from './pages/ResetLinkSentPage';
 import { supabase } from './lib/supabase';
 import { Routes, Route } from 'react-router-dom';
 import { SemesterSchedule } from './pages/SemesterSchedule';
+import { PlanSelection } from './pages/PlanSelection';
+import { CourseSelectionPage } from './pages/CourseSelectionPage';
+import { SavedPlanView } from './pages/SavedPlanView';
+import { DragDropPlanning } from './pages/DragDropPlanning';
 
 export type Page =
   | 'welcome'
@@ -40,6 +44,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [resetEmail, setResetEmail] = useState('');
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   const loadUserProfile = async (authUser: {
     id: string;
@@ -326,7 +331,83 @@ function App() {
             )
           }
         />
-
+        <Route
+          path="/plan-selection"
+          element={
+            currentUser ? (
+              <PlanSelection
+                onSelectPlan={setSelectedPlanId}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
+        <Route
+          path="/course-selection"
+          element={
+            currentUser ? (
+              <CourseSelectionPage
+                user={currentUser}
+                onContinue={(planId) => {
+                  setSelectedPlanId(planId);
+                }}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
+        <Route
+          path="/saved-plan-view"
+          element={
+            currentUser && selectedPlanId ? (
+              <SavedPlanView
+                onNavigate={setCurrentPage}
+                planId={selectedPlanId}
+              />
+            ) : (
+              <PlanSelection
+                onSelectPlan={setSelectedPlanId}
+              />
+            )
+          }
+        />
+        <Route
+          path="/drag-drop-planning"
+          element={
+            currentUser ? (
+              <DragDropPlanning
+                onNavigate={setCurrentPage}
+                user={currentUser}
+                planId={selectedPlanId}
+              />
+            ) : (
+              <LoginPage
+                onNavigate={setCurrentPage}
+                onLogin={(user) => {
+                  console.log('Logged in user:', user);
+                  setCurrentUser(user);
+                  setCurrentPage('dashboard');
+                }}
+              />
+            )
+          }
+        />
         <Route
           path="*"
   
