@@ -10,6 +10,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { useNavigate } from 'react-router-dom';
 
 interface SavedPlanViewProps {
   onNavigate: (page: Page) => void;
@@ -17,6 +18,7 @@ interface SavedPlanViewProps {
 }
 
 export function SavedPlanView({ onNavigate, planId }: SavedPlanViewProps) {
+  const navigate = useNavigate();
   const [plan, setPlan] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const maxHistorySize = 10;
@@ -198,7 +200,7 @@ export function SavedPlanView({ onNavigate, planId }: SavedPlanViewProps) {
       sessionStorage.setItem('editingPlanId', planId);
       sessionStorage.setItem('returnTo', 'saved-plan-view');
     }
-    onNavigate('drag-drop-planning');
+    navigate('/drag-drop-planning');
   };
 
   if (!plan) {

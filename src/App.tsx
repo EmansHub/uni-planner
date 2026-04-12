@@ -394,6 +394,9 @@ function App() {
               <DragDropPlanning
                 user={currentUser}
                 planId={selectedPlanId}
+                onPlanSaved={(newPlanId) => {
+                  setSelectedPlanId(newPlanId);
+                }}
               />
             ) : (
               <LoginPage

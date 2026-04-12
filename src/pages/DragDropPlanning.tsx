@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase';
 interface DragDropPlanningProps {
   user: User;
   planId?: string | null;
+  onPlanSaved?: (planId: string) => void;
 }
 
 interface Semester {
@@ -70,7 +71,7 @@ const SPRING_ONLY_COURSES = [
   'COSC 4363', // Theory of Computation
 ];
 
-export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
+export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanningProps) {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [coursesToTake, setCoursesToTake] = useState<Course[]>([]);
@@ -109,6 +110,7 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
   const [selectedElectiveCourse, setSelectedElectiveCourse] = useState<string | null>(null);
   const [availableElectives, setAvailableElectives] = useState<Course[]>([]);
   const [originalElectiveToReplace, setOriginalElectiveToReplace] = useState<Course | null>(null);
+  const [totalRequiredCredits, setTotalRequiredCredits] = useState(0);
 
   const loadPlanFromSupabase = async (targetPlanId: string) => {
     const { data: planRow, error: planError } = await supabase
@@ -164,6 +166,25 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
       return;
     }
 
+    const { data: prereqRows, error: prereqError } = await supabase
+      .from('course_prerequisites')
+      .select('course_id, prerequisite_course_id');
+
+    if (prereqError) {
+      console.error('Error loading prerequisites for saved plan:', prereqError);
+      toast.error('Failed to load prerequisites');
+      setLoadingPlan(false);
+      return;
+    }
+
+    const prereqMap = new Map<string, string[]>();
+
+    (prereqRows || []).forEach((row: any) => {
+      const current = prereqMap.get(row.course_id) || [];
+      current.push(row.prerequisite_course_id);
+      prereqMap.set(row.course_id, current);
+    });
+
     const mapCourseRow = (courseInfo: any, electiveCategory?: string): Course => ({
       id: courseInfo.id,
       code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
@@ -172,6 +193,7 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
       department: courseInfo.id.replace(/\d+/g, ''),
       semesterHours: courseInfo.semester_hours ?? undefined,
       isPrepCourse: courseInfo.credits === 0,
+      prerequisites: prereqMap.get(courseInfo.id) || undefined,
       requiredHours: courseInfo.required_hours ?? undefined,
       mustBeAlone: courseInfo.must_be_alone ?? false,
       electiveCategory: electiveCategory || undefined,
@@ -214,11 +236,101 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
       })),
     });
 
+    const { data: curriculumRows, error: curriculumError } = await supabase
+      .from('curriculum_section_courses')
+      .select(`
+        course_category,
+        course_id,
+        courses (
+          id,
+          name,
+          credits,
+          semester_hours,
+          required_hours,
+          must_be_alone
+        )
+      `)
+      .eq('degree_program_code', user.major);
+
+    if (curriculumError) {
+      console.error('Error loading curriculum for saved plan:', curriculumError);
+      toast.error('Failed to rebuild saved plan courses');
+      setLoadingPlan(false);
+      return;
+    }
+
+    const allCurriculumCourses: Course[] = [];
+    const electiveCourses: Course[] = [];
+
+    (curriculumRows || []).forEach((row: any) => {
+      const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+      if (!courseInfo) return;
+
+      const builtCourse: Course = {
+        id: courseInfo.id,
+        code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+        name: courseInfo.name,
+        credits: courseInfo.credits,
+        department: courseInfo.id.replace(/\d+/g, ''),
+        semesterHours: courseInfo.semester_hours ?? undefined,
+        isPrepCourse: courseInfo.credits === 0,
+        prerequisites: prereqMap.get(courseInfo.id) || undefined,
+        requiredHours: courseInfo.required_hours ?? undefined,
+        mustBeAlone: courseInfo.must_be_alone ?? false,
+        electiveCategory: row.course_category.toLowerCase().includes('elective')
+          ? row.course_category
+          : undefined,
+      };
+
+      allCurriculumCourses.push(builtCourse);
+
+      if (row.course_category.toLowerCase().includes('elective')) {
+        electiveCourses.push(builtCourse);
+      }
+    });
+
+    const plannedCourseIds = new Set(
+      loadedSemesters.flatMap((sem) => sem.courses.map((course) => course.id))
+    );
+
+    const completedCourseIds = new Set(
+      loadedCompletedCourses.map((course) => course.id)
+    );
+
+    const remainingCourses = allCurriculumCourses.filter(
+      (course) =>
+        !plannedCourseIds.has(course.id) &&
+        !completedCourseIds.has(course.id)
+    );
+
+    setCoursesToTake(remainingCourses);
+    setAvailableElectives(electiveCourses);
     setLoadingPlan(false);
+  };
+
+    const loadTotalRequiredCredits = async () => {
+      const { data, error } = await supabase
+        .from('curriculum_sections')
+        .select('required_credits')
+        .eq('degree_program_code', user.major);
+
+      if (error) {
+        console.error('Error loading total required credits:', error);
+        return;
+      }
+
+    const total = (data || []).reduce(
+      (sum: number, row: any) => sum + (row.required_credits || 0),
+      0
+    );
+
+    setTotalRequiredCredits(total);
   };
 
   useEffect(() => {
     setLoadingPlan(true);
+    loadTotalRequiredCredits();
+
     const editingPlanId = sessionStorage.getItem('editingPlanId');
 
     if (editingPlanId && planId === editingPlanId) {
@@ -288,39 +400,21 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
         if (course.isPrepCourse) return;
         // Skip repeat courses - student already has these credits
         if (restrictions.repeatCourseIds.includes(course.id)) {
-          console.log('[PLANNED CREDITS] Skipping repeat course:', course.code, course.credits, 'cr', 'Course ID:', course.id);
           skippedRepeatCredits += course.credits;
           return;
         }
-        console.log('[PLANNED CREDITS] Counting course:', course.code, course.credits, 'cr', 'ID:', course.id);
         totalPlanned += course.credits;
       });
     });
-    console.log('[PLANNED CREDITS] Total Planned:', totalPlanned, 'Skipped Repeat Credits:', skippedRepeatCredits);
     return totalPlanned;
   };
 
   const getRemainingCredits = () => {
-    const totalRequired = user.major === 'Computer Science' ? 137 : 120;
+    const totalRequired = totalRequiredCredits;
     const completedCredits = getTotalCompletedCredits();
     const plannedCredits = getTotalPlannedCredits();
-    const remaining = totalRequired - completedCredits - plannedCredits;
-    
-    // Debug logging
-    console.log('========== REMAINING CREDITS DEBUG ==========');
-    console.log('Total Required:', totalRequired);
-    console.log('Completed Credits:', completedCredits);
-    console.log('Completed Courses:', completedCourses.map(c => `${c.code} (${c.credits}cr)`).join(', '));
-    console.log('Planned Credits:', plannedCredits);
-    console.log('Repeat Course IDs:', restrictions.repeatCourseIds);
-    restrictions.repeatCourseIds.forEach(id => {
-      const repeatCourse = completedCourses.find(c => c.id === id);
-      console.log('Repeat Course Details:', repeatCourse ? `${repeatCourse.code} (${repeatCourse.credits}cr, ID: ${repeatCourse.id})` : 'NOT FOUND');
-    });
-    console.log('Calculation:', `${totalRequired} - ${completedCredits} - ${plannedCredits} = ${remaining}`);
-    console.log('Remaining:', remaining);
-    console.log('==========================================');
-    
+    const remaining = Math.max(0, totalRequired - completedCredits - plannedCredits);
+
     return remaining;
   };
 
@@ -803,7 +897,9 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
 
     // Check standing requirements (hour-based prerequisites)
     if (targetSemester !== 'available' && draggedCourse.requiredHours) {
-      const canOverride = restrictions.overrideCourses.includes(draggedCourse.id);
+      const canOverride = restrictions.overrideCourses.some(
+      override => override.courseId === draggedCourse.id && override.verified
+    );
       
       if (!canOverride) {
         const hoursBeforeSemester = getHoursBeforeSemester(targetSemester);
@@ -934,7 +1030,11 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
         if (!course.requiredHours) return true;
         
         // Check if course can override standing requirements
-        if (restrictions.overrideCourses.includes(course.id)) return true;
+        if (
+          restrictions.overrideCourses.some(
+            override => override.courseId === course.id && override.verified
+          )
+        ) return true;
         
         return totalHoursBeforeSemester >= course.requiredHours;
       };
@@ -1150,15 +1250,17 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
     }
 
     // 3. Save semester courses
-    const semesterCourseRows = semesters.flatMap((semester) =>
-      semester.courses.map((course, index) => ({
-        degree_plan_id: savedPlanId,
-        semester_key: semester.id,
-        course_id: course.id,
-        display_order: index,
-        elective_category: course.electiveCategory || null,
-      }))
-    );
+      const semesterCourseRows = semesters.flatMap((semester) =>
+        semester.courses
+          .filter((course) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
+          .map((course, index) => ({
+            degree_plan_id: savedPlanId,
+            semester_key: semester.id,
+            course_id: course.id,
+            display_order: index,
+            elective_category: course.electiveCategory || null,
+          }))
+      );
 
     if (semesterCourseRows.length > 0) {
       const { error: semesterCourseError } = await supabase
@@ -1166,7 +1268,8 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
         .insert(semesterCourseRows);
 
       if (semesterCourseError) {
-        console.error('Error saving semester courses:', semesterCourseError);
+        console.error('Error saving semester courses:', JSON.stringify(semesterCourseError, null, 2));
+        console.log('semesterCourseRows:', semesterCourseRows);
         toast.error('Failed to save semester courses');
         return;
       }
@@ -1226,8 +1329,15 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
       }
     }
 
+    if (onPlanSaved && savedPlanId) {
+      onPlanSaved(String(savedPlanId));
+    }
+
     setShowSaveDialog(false);
     toast.success('Plan saved successfully!');
+
+    // redirect to saved plan view
+    navigate('/saved-plan-view');
   };
 
   const handleSavePlan = async () => {
