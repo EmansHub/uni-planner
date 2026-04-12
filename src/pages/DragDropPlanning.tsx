@@ -1234,54 +1234,6 @@ export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
     await savePlanToSupabase();
   };
 
-    // Get all courses and originally completed course IDs from sessionStorage
-    const allCourses = JSON.parse(sessionStorage.getItem('allCourses') || '[]');
-    const originalCompletedIds = JSON.parse(sessionStorage.getItem('originalCompletedIds') || '[]');
-    const completedCoursesData = JSON.parse(sessionStorage.getItem('completedCoursesData') || '[]');
-    const allElectiveOptions = JSON.parse(sessionStorage.getItem('allElectiveOptions') || '[]');
-
-    // Get all courses currently in coursesToTake and semesters to build accurate list
-    const coursesInPlan = [
-      ...coursesToTake,
-      ...semesters.flatMap(s => s.courses)
-    ];
-
-    // Filter out elective placeholders - only include actual courses and selected electives
-    const filteredAllCourses = coursesInPlan.filter((c: any) => !c.isElectiveOption);
-
-    const plan = {
-      id: planId || Date.now().toString(),
-      name: planName,
-      userId: user.email,
-      semesters: semesters.reduce((acc, sem) => {
-        // Only include semesters that have at least one course
-        if (sem.courses && sem.courses.length > 0) {
-          acc[sem.id] = sem;
-        }
-        return acc;
-      }, {} as any),
-      allCourses: filteredAllCourses, // Store all courses (excluding elective placeholders)
-      originalCompletedIds: originalCompletedIds, // Store IDs of courses originally marked as "done"
-      completedCoursesData: completedCoursesData, // Store full data of completed courses
-      allElectiveOptions: allElectiveOptions, // Store all available elective options
-      restrictions: restrictions, // Store plan restrictions including overrides
-      createdAt: new Date().toISOString(),
-    };
-
-    const existingPlans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const planIndex = existingPlans.findIndex((p: any) => p.id === plan.id);
-
-    if (planIndex !== -1) {
-      existingPlans[planIndex] = plan;
-    } else {
-      existingPlans.push(plan);
-    }
-
-    localStorage.setItem('degreePlans', JSON.stringify(existingPlans));
-    setShowSaveDialog(false);
-    setPlanName('');
-    toast.success('Plan saved successfully!');
-  };
 
   const handleRepeatCourseChange = (courseId: string) => {
     if (courseId === 'none') return;
