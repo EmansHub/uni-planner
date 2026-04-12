@@ -392,7 +392,6 @@ function App() {
           element={
             currentUser ? (
               <DragDropPlanning
-                onNavigate={setCurrentPage}
                 user={currentUser}
                 planId={selectedPlanId}
               />

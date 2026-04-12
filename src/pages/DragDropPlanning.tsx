@@ -10,11 +10,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ArrowLeft, GripVertical, Settings, Sparkles, Save, ChevronLeft, ChevronRight, Plus, X, CheckCircle2, Home, Info } from 'lucide-react';
-import type { Page, Course, User } from '../App';
+import type { User } from '../App';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface DragDropPlanningProps {
-  onNavigate: (page: Page) => void;
   user: User;
   planId?: string | null;
 }
@@ -37,6 +38,22 @@ interface Restrictions {
   }>;
 }
 
+interface Course {
+  id: string;
+  code: string;
+  name: string;
+  credits: number;
+  department: string;
+  semesterHours?: number;
+  isPrepCourse?: boolean;
+  prerequisites?: string[];
+  requiredHours?: number;
+  mustBeAlone?: boolean;
+  isElectiveOption?: boolean;
+  electiveCategory?: string;
+  maxElectivesAllowed?: number;
+}
+
 // Courses with semester-specific availability
 const FALL_ONLY_COURSES = [
   'COSC 3332', // Discrete Structures and Combinatorial Analysis
@@ -53,7 +70,9 @@ const SPRING_ONLY_COURSES = [
   'COSC 4363', // Theory of Computation
 ];
 
-export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningProps) {
+export function DragDropPlanning({ user, planId }: DragDropPlanningProps) {
+  const navigate = useNavigate();
+  const [loadingPlan, setLoadingPlan] = useState(true);
   const [coursesToTake, setCoursesToTake] = useState<Course[]>([]);
   const [semesters, setSemesters] = useState<Semester[]>([
     { id: 'fall-2025', name: 'Fall 2025', courses: [], completed: false },
@@ -91,96 +110,121 @@ export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningP
   const [availableElectives, setAvailableElectives] = useState<Course[]>([]);
   const [originalElectiveToReplace, setOriginalElectiveToReplace] = useState<Course | null>(null);
 
+  const loadPlanFromSupabase = async (targetPlanId: string) => {
+    const { data: planRow, error: planError } = await supabase
+      .from('degree_plans')
+      .select(`
+        id,
+        name,
+        has_overload,
+        degree_plan_semesters (
+          semester_key,
+          display_order,
+          completed,
+          is_summer,
+          degree_plan_semester_courses (
+            course_id,
+            display_order,
+            elective_category,
+            courses (
+              id,
+              name,
+              credits,
+              semester_hours,
+              required_hours,
+              must_be_alone
+            )
+          )
+        ),
+        degree_plan_completed_courses (
+          course_id,
+          courses (
+            id,
+            name,
+            credits,
+            semester_hours,
+            required_hours,
+            must_be_alone
+          )
+        ),
+        degree_plan_repeat_courses (
+          course_id
+        ),
+        degree_plan_override_courses (
+          course_id
+        )
+      `)
+      .eq('id', Number(targetPlanId))
+      .single();
+
+    if (planError || !planRow) {
+      console.error('Error loading saved plan:', planError);
+      toast.error('Failed to load saved plan');
+      setLoadingPlan(false);
+      return;
+    }
+
+    const mapCourseRow = (courseInfo: any, electiveCategory?: string): Course => ({
+      id: courseInfo.id,
+      code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+      name: courseInfo.name,
+      credits: courseInfo.credits,
+      department: courseInfo.id.replace(/\d+/g, ''),
+      semesterHours: courseInfo.semester_hours ?? undefined,
+      isPrepCourse: courseInfo.credits === 0,
+      requiredHours: courseInfo.required_hours ?? undefined,
+      mustBeAlone: courseInfo.must_be_alone ?? false,
+      electiveCategory: electiveCategory || undefined,
+    });
+
+    const loadedSemesters: Semester[] = (planRow.degree_plan_semesters || [])
+      .sort((a: any, b: any) => a.display_order - b.display_order)
+      .map((sem: any) => ({
+        id: sem.semester_key,
+        name: sem.semester_key,
+        completed: sem.completed,
+        isSummer: sem.is_summer,
+        courses: (sem.degree_plan_semester_courses || [])
+          .sort((a: any, b: any) => a.display_order - b.display_order)
+          .map((courseRow: any) => {
+            const courseInfo = Array.isArray(courseRow.courses)
+              ? courseRow.courses[0]
+              : courseRow.courses;
+
+            return mapCourseRow(courseInfo, courseRow.elective_category);
+          }),
+      }));
+
+    const loadedCompletedCourses: Course[] = (planRow.degree_plan_completed_courses || []).map((row: any) => {
+      const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+      return mapCourseRow(courseInfo);
+    });
+
+    setSemesters(loadedSemesters);
+    setPlanName(planRow.name);
+    setCompletedCourses(loadedCompletedCourses);
+
+    setRestrictions({
+      hasOverload: !!planRow.has_overload,
+      repeatCourseIds: (planRow.degree_plan_repeat_courses || []).map((row: any) => row.course_id),
+      overrideCourses: (planRow.degree_plan_override_courses || []).map((row: any) => ({
+        courseId: row.course_id,
+        proofImage: '',
+        verified: true,
+      })),
+    });
+
+    setLoadingPlan(false);
+  };
+
   useEffect(() => {
+    setLoadingPlan(true);
     const editingPlanId = sessionStorage.getItem('editingPlanId');
-    
+
     if (editingPlanId && planId === editingPlanId) {
-      const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-      const existingPlan = plans.find((p: any) => p.id === editingPlanId);
-      
-      if (existingPlan) {
-        const loadedSemesters = Object.values(existingPlan.semesters) as any[];
-        setSemesters(loadedSemesters);
-        setPlanName(existingPlan.name);
-        
-        // Use allCourses from the saved plan (this is the complete original course list)
-        const allCoursesFromPlan = existingPlan.allCourses || [];
-        const plannedCourseIds = loadedSemesters.flatMap(sem => sem.courses.map((c: any) => c.id));
-        const remaining = allCoursesFromPlan.filter((course: Course) => !plannedCourseIds.includes(course.id));
-        setCoursesToTake(remaining);
-        
-        // Calculate completed courses for the restrictions dropdown
-        // 1. Courses from completed semesters
-        const completedCoursesFromSemesters: Course[] = [];
-        loadedSemesters.forEach(sem => {
-          if (sem.completed) {
-            sem.courses.forEach((course: any) => {
-              if (!completedCoursesFromSemesters.find(c => c.id === course.id)) {
-                completedCoursesFromSemesters.push(course);
-              }
-            });
-          }
-        });
-        
-        // 2. Courses that were originally marked as "done" when plan was created
-        // Use the completedCoursesData from the saved plan
-        const originallyCompleted = existingPlan.completedCoursesData || [];
-        
-        // Merge both lists (avoid duplicates)
-        const allCompletedCourses = [...completedCoursesFromSemesters];
-        originallyCompleted.forEach((course: Course) => {
-          if (!allCompletedCourses.find(c => c.id === course.id)) {
-            allCompletedCourses.push(course);
-          }
-        });
-        
-        setCompletedCourses(allCompletedCourses);
-        
-        // Load restrictions if they exist (with backward compatibility)
-        if (existingPlan.restrictions) {
-          const loadedRestrictions = existingPlan.restrictions;
-          
-          // Handle backward compatibility for repeatCourseId -> repeatCourseIds
-          let repeatCourseIds = loadedRestrictions.repeatCourseIds || [];
-          if (loadedRestrictions.repeatCourseId && !loadedRestrictions.repeatCourseIds) {
-            // Old format - convert single string to array
-            repeatCourseIds = [loadedRestrictions.repeatCourseId];
-          }
-          
-          // Handle both old (string[]) and new (object[]) formats for overrideCourses
-          let overrideCourses = loadedRestrictions.overrideCourses || [];
-          if (Array.isArray(loadedRestrictions.overrideCourses) && loadedRestrictions.overrideCourses.length > 0) {
-            // Check if it's the old format (array of strings)
-            if (typeof loadedRestrictions.overrideCourses[0] === 'string') {
-              // Convert old format to new format
-              overrideCourses = loadedRestrictions.overrideCourses.map((courseId: string) => ({
-                courseId,
-                proofImage: '',
-                verified: true
-              }));
-            }
-          }
-          
-          setRestrictions({
-            hasOverload: loadedRestrictions.hasOverload || false,
-            repeatCourseIds,
-            overrideCourses
-          });
-        }
-        
-        // Load available elective options
-        const savedElectiveOptions = existingPlan.allElectiveOptions || [];
-        setAvailableElectives(savedElectiveOptions);
-        
-        // Store data in session for when we save the plan again
-        sessionStorage.setItem('allCourses', JSON.stringify(allCoursesFromPlan));
-        sessionStorage.setItem('originalCompletedIds', JSON.stringify(existingPlan.originalCompletedIds || []));
-        sessionStorage.setItem('completedCoursesData', JSON.stringify(originallyCompleted));
-        sessionStorage.setItem('allElectiveOptions', JSON.stringify(savedElectiveOptions));
-        
-        sessionStorage.removeItem('editingPlanId');
-        return;
-      }
+      loadPlanFromSupabase(editingPlanId);
+      sessionStorage.removeItem('editingPlanId');
+      return;
     }
 
     const completedCourseIds = JSON.parse(sessionStorage.getItem('completedCourses') || '[]');
@@ -204,6 +248,7 @@ export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningP
     );
 
     setCoursesToTake(remaining);
+    setLoadingPlan(false);
     
     // Automatically place currently taken courses in Fall 2025 (current semester)
     if (currentCoursesObjects.length > 0) {
@@ -1016,11 +1061,178 @@ export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningP
     }
   };
 
-  const handleSavePlan = () => {
+  const savePlanToSupabase = async () => {
     if (!planName.trim()) {
       toast.error('Please enter a plan name');
       return;
     }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+
+    if (!authUser) {
+      toast.error('You must be logged in');
+      return;
+    }
+
+    const existingPlanId = planId ? Number(planId) : null;
+
+    // 1. Create or update main degree plan row
+    let savedPlanId = existingPlanId;
+
+    if (savedPlanId) {
+      const { error: updatePlanError } = await supabase
+        .from('degree_plans')
+        .update({
+          name: planName,
+          degree_program_code: user.major,
+          has_overload: restrictions.hasOverload,
+        })
+        .eq('id', savedPlanId);
+
+      if (updatePlanError) {
+        console.error('Error updating degree plan:', updatePlanError);
+        toast.error('Failed to update plan');
+        return;
+      }
+
+      // Clear old child rows before re-inserting
+      await supabase.from('degree_plan_semester_courses').delete().eq('degree_plan_id', savedPlanId);
+      await supabase.from('degree_plan_semesters').delete().eq('degree_plan_id', savedPlanId);
+      await supabase.from('degree_plan_completed_courses').delete().eq('degree_plan_id', savedPlanId);
+      await supabase.from('degree_plan_repeat_courses').delete().eq('degree_plan_id', savedPlanId);
+      await supabase.from('degree_plan_override_courses').delete().eq('degree_plan_id', savedPlanId);
+    } else {
+      const { data: newPlan, error: insertPlanError } = await supabase
+        .from('degree_plans')
+        .insert({
+          user_id: authUser.id,
+          name: planName,
+          degree_program_code: user.major,
+          has_overload: restrictions.hasOverload,
+        })
+        .select()
+        .single();
+
+      if (insertPlanError || !newPlan) {
+        console.error('Error creating degree plan:', insertPlanError);
+        toast.error('Failed to save plan');
+        return;
+      }
+
+      savedPlanId = newPlan.id;
+    }
+
+    if (!savedPlanId) {
+      toast.error('Plan ID missing');
+      return;
+    }
+
+    // 2. Save semesters
+    const semesterRows = semesters.map((semester, index) => ({
+      degree_plan_id: savedPlanId,
+      semester_key: semester.id,
+      display_order: index,
+      completed: semester.completed,
+      is_summer: !!semester.isSummer,
+    }));
+
+    if (semesterRows.length > 0) {
+      const { error: semesterError } = await supabase
+        .from('degree_plan_semesters')
+        .insert(semesterRows);
+
+      if (semesterError) {
+        console.error('Error saving semesters:', semesterError);
+        toast.error('Failed to save semesters');
+        return;
+      }
+    }
+
+    // 3. Save semester courses
+    const semesterCourseRows = semesters.flatMap((semester) =>
+      semester.courses.map((course, index) => ({
+        degree_plan_id: savedPlanId,
+        semester_key: semester.id,
+        course_id: course.id,
+        display_order: index,
+        elective_category: course.electiveCategory || null,
+      }))
+    );
+
+    if (semesterCourseRows.length > 0) {
+      const { error: semesterCourseError } = await supabase
+        .from('degree_plan_semester_courses')
+        .insert(semesterCourseRows);
+
+      if (semesterCourseError) {
+        console.error('Error saving semester courses:', semesterCourseError);
+        toast.error('Failed to save semester courses');
+        return;
+      }
+    }
+
+    // 4. Save completed courses
+    const completedCourseRows = completedCourses.map((course) => ({
+      degree_plan_id: savedPlanId,
+      course_id: course.id,
+    }));
+
+    if (completedCourseRows.length > 0) {
+      const { error: completedError } = await supabase
+        .from('degree_plan_completed_courses')
+        .insert(completedCourseRows);
+
+      if (completedError) {
+        console.error('Error saving completed courses:', completedError);
+        toast.error('Failed to save completed courses');
+        return;
+      }
+    }
+
+    // 5. Save repeat courses
+    const repeatRows = restrictions.repeatCourseIds.map((courseId) => ({
+      degree_plan_id: savedPlanId,
+      course_id: courseId,
+    }));
+
+    if (repeatRows.length > 0) {
+      const { error: repeatError } = await supabase
+        .from('degree_plan_repeat_courses')
+        .insert(repeatRows);
+
+      if (repeatError) {
+        console.error('Error saving repeat courses:', repeatError);
+        toast.error('Failed to save repeat courses');
+        return;
+      }
+    }
+
+    // 6. Save override courses
+    const overrideRows = restrictions.overrideCourses.map((override) => ({
+      degree_plan_id: savedPlanId,
+      course_id: override.courseId,
+    }));
+
+    if (overrideRows.length > 0) {
+      const { error: overrideError } = await supabase
+        .from('degree_plan_override_courses')
+        .insert(overrideRows);
+
+      if (overrideError) {
+        console.error('Error saving override courses:', overrideError);
+        toast.error('Failed to save override courses');
+        return;
+      }
+    }
+
+    setShowSaveDialog(false);
+    toast.success('Plan saved successfully!');
+  };
+
+  const handleSavePlan = async () => {
+    await savePlanToSupabase();
+  };
 
     // Get all courses and originally completed course IDs from sessionStorage
     const allCourses = JSON.parse(sessionStorage.getItem('allCourses') || '[]');
@@ -1176,11 +1388,19 @@ export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningP
     const returnTo = sessionStorage.getItem('returnTo');
     if (returnTo === 'saved-plan-view' && planId) {
       sessionStorage.removeItem('returnTo');
-      onNavigate('saved-plan-view');
+      navigate('/saved-plan-view');
     } else {
-      onNavigate('course-selection');
+      navigate('/course-selection');
     }
   };
+
+  if (loadingPlan) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4 flex items-center justify-center">
+        <p>Loading degree plan...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
@@ -1195,7 +1415,7 @@ export function DragDropPlanning({ onNavigate, user, planId }: DragDropPlanningP
           </Button>
           <Button
             variant="ghost"
-            onClick={() => onNavigate('dashboard')}
+            onClick={() => navigate('/dashboard')}
           >
             <Home className="w-4 h-4 mr-2" />
             Home
