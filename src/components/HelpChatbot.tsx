@@ -74,16 +74,69 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: getBotResponse(inputMessage),
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, botResponse]);
-    }, 500);
+    const handleSendMessage = async () => {
+  if (!inputMessage.trim()) return;
+
+  const userMessage: Message = {
+    id: Date.now().toString(),
+    text: inputMessage,
+    sender: 'user',
+    timestamp: new Date(),
+  };
+
+  setMessages(prev => [...prev, userMessage]);
+
+  const currentMessage = inputMessage; // store before clearing
+  setInputMessage('');
+
+  // 🔹 show temporary "Typing..." message
+  const typingMessage: Message = {
+    id: 'typing',
+    text: 'Typing...',
+    sender: 'bot',
+    timestamp: new Date(),
+  };
+
+  setMessages(prev => [...prev, typingMessage]);
+
+  try {
+    const response = await fetch('http://127.0.0.1:5000/chatbot', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message: currentMessage }),
+    });
+
+    const data = await response.json();
+
+    // remove "Typing..."
+    setMessages(prev => prev.filter(msg => msg.id !== 'typing'));
+
+    const botResponse: Message = {
+      id: (Date.now() + 1).toString(),
+      text: data.reply,
+      sender: 'bot',
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, botResponse]);
+
+  } catch (error) {
+    console.error(error);
+
+    setMessages(prev => prev.filter(msg => msg.id !== 'typing'));
+
+    const errorMessage: Message = {
+      id: (Date.now() + 2).toString(),
+      text: 'Something went wrong. Please try again.',
+      sender: 'bot',
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, errorMessage]);
+  }
+};
 
     setInputMessage('');
   };
