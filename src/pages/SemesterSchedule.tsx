@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -15,7 +15,6 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from "react";
 import { fetchSectionsWithMeetings, SectionWithMeetings } from "../lib/courseData";
 
 interface SemesterScheduleProps {
