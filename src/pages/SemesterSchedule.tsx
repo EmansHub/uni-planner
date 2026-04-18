@@ -15,7 +15,22 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { fetchSectionsWithMeetings, SectionWithMeetings } from "../lib/courseData";
+import { fetchSectionsWithMeetings } from "../lib/courseData";
+
+interface SectionWithMeetings {
+  crn: string;
+  course_id: string;
+  section: string;
+  instructor: string | null;
+  room: string | null;
+  credits: number;
+  meetings: {
+    crn: string;
+    day: string;
+    start_time: string;
+    end_time: string;
+  }[];
+}
 
 interface SemesterScheduleProps {
   user: User;
@@ -68,57 +83,27 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [sectionsLoading, setSectionsLoading] = useState(true);
   const [curriculumCourseIds, setCurriculumCourseIds] = useState<Set<string>>(new Set());
 
+//load synced data
+const [sections, setSections] = useState<SectionWithMeetings[]>([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
 
-  //load the synced data
-  export function SemesterSchedule() {
-  const [sections, setSections] = useState<SectionWithMeetings[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchSectionsWithMeetings();
+      setSections(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load course data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchSectionsWithMeetings();
-        setSections(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load course data");
-      } finally {
-        setLoading(false);
-      }
-    };
+  loadData();
+}, []);
 
-    loadData();
-  }, []);
-
-  if (loading) return <div>Loading course offerings...</div>;
-  if (error) return <div>{error}</div>;
-
-  return (
-    <div>
-      <h1>Semester Schedule</h1>
-
-      {sections.map((section) => (
-        <div key={section.crn}>
-          <h3>
-            {section.course_id} - Section {section.section}
-          </h3>
-          <p>Instructor: {section.instructor || "N/A"}</p>
-          <p>Room: {section.room || "N/A"}</p>
-          <p>Credits: {section.credits}</p>
-
-          <ul>
-            {section.meetings.map((meeting, index) => (
-              <li key={`${meeting.crn}-${meeting.day}-${index}`}>
-                {meeting.day} | {meeting.start_time} - {meeting.end_time}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  );
-}
 
   const sectionsSource = dbSections;
   
