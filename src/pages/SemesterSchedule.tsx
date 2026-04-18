@@ -15,6 +15,23 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { fetchSectionsWithMeetings } from "../lib/courseData";
+
+interface SectionWithMeetings {
+  crn: string;
+  course_id: string;
+  section: string;
+  instructor: string | null;
+  room: string | null;
+  credits: number;
+  meetings: {
+    crn: string;
+    day: string;
+    start_time: string;
+    end_time: string;
+  }[];
+}
+
 
 interface SemesterScheduleProps {
   user: User;
