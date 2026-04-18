@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -6,28 +6,145 @@ import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { ArrowLeft, Edit2, CheckCircle2, Trash2, AlertTriangle, Undo } from 'lucide-react';
 import type { Page } from '../App';
-import { ScrollArea } from '../ui/scroll-area';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface SavedPlanViewProps {
-  onNavigate: (page: Page) => void;
   planId: string;
 }
 
-export function SavedPlanView({ onNavigate, planId }: SavedPlanViewProps) {
+export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const navigate = useNavigate();
   const [plan, setPlan] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const maxHistorySize = 10;
 
+  const loadSavedPlan = async () => {
+    const { data, error } = await supabase
+      .from('degree_plans')
+      .select(`
+        id,
+        name,
+        is_default,
+        has_overload,
+        degree_plan_semesters (
+          semester_key,
+          display_order,
+          completed,
+          is_summer,
+          degree_plan_semester_courses (
+            course_id,
+            display_order,
+            elective_category,
+            courses (
+              id,
+              name,
+              credits,
+              semester_hours,
+              required_hours,
+              must_be_alone
+            )
+          )
+        ),
+        degree_plan_completed_courses (
+          course_id,
+          courses (
+            id,
+            name,
+            credits,
+            semester_hours,
+            required_hours,
+            must_be_alone
+          )
+        ),
+        degree_plan_repeat_courses (
+          course_id
+        ),
+        degree_plan_override_courses (
+          course_id
+        )
+      `)
+      .eq('id', Number(planId))
+      .single();
+
+    if (error || !data) {
+      console.error('Error loading saved plan:', error);
+      toast.error('Failed to load saved plan');
+      setPlan(null);
+      return;
+    }
+
+    const semestersArray = (data.degree_plan_semesters || [])
+      .sort((a: any, b: any) => a.display_order - b.display_order)
+      .map((sem: any) => ({
+        id: sem.semester_key,
+        name: sem.semester_key,
+        completed: sem.completed,
+        isSummer: sem.is_summer,
+        courses: (sem.degree_plan_semester_courses || [])
+          .sort((a: any, b: any) => a.display_order - b.display_order)
+          .map((row: any) => {
+            const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+
+            return {
+              id: courseInfo.id,
+              code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+              name: courseInfo.name,
+              credits: courseInfo.credits,
+              semesterHours: courseInfo.semester_hours ?? undefined,
+              requiredHours: courseInfo.required_hours ?? undefined,
+              mustBeAlone: courseInfo.must_be_alone ?? false,
+              electiveCategory: row.elective_category || undefined,
+            };
+          }),
+      }));
+
+    const completedCoursesData = (data.degree_plan_completed_courses || []).map((row: any) => {
+      const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+
+      return {
+        id: courseInfo.id,
+        code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+        name: courseInfo.name,
+        credits: courseInfo.credits,
+        semesterHours: courseInfo.semester_hours ?? undefined,
+        requiredHours: courseInfo.required_hours ?? undefined,
+        mustBeAlone: courseInfo.must_be_alone ?? false,
+      };
+    });
+
+    const semestersObject = semestersArray.reduce((acc: any, sem: any) => {
+      acc[sem.id] = sem;
+      return acc;
+    }, {});
+
+    const allCourses = semestersArray.flatMap((sem: any) => sem.courses);
+
+    setPlan({
+      id: String(data.id),
+      name: data.name,
+      semesters: semestersObject,
+      allCourses,
+      completedCoursesData,
+      originalCompletedIds: completedCoursesData.map((c: any) => c.id),
+      restrictions: {
+        hasOverload: !!data.has_overload,
+        repeatCourseIds: (data.degree_plan_repeat_courses || []).map((r: any) => r.course_id),
+        overrideCourses: (data.degree_plan_override_courses || []).map((r: any) => ({
+          courseId: r.course_id,
+          proofImage: '',
+          verified: true,
+        })),
+      },
+    });
+  };
+
   useEffect(() => {
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const foundPlan = plans.find((p: any) => p.id === planId);
-    setPlan(foundPlan);
-    setHistory([]); // Reset history when loading a new plan
+    loadSavedPlan();
+    setHistory([]);
   }, [planId]);
 
   const saveToHistory = (currentPlan: any) => {
@@ -170,36 +287,8 @@ export function SavedPlanView({ onNavigate, planId }: SavedPlanViewProps) {
   };
 
   const handleEdit = () => {
-    // Store plan data in session for editing
-    if (plan) {
-      // Use the stored allCourses from the plan, or collect from semesters as fallback
-      let allCourses = plan.allCourses || [];
-      
-      // Fallback: if plan doesn't have allCourses stored, collect from semesters
-      if (!allCourses || allCourses.length === 0) {
-        allCourses = [];
-        Object.values(plan.semesters).forEach((semester: any) => {
-          semester.courses.forEach((course: any) => {
-            if (!allCourses.find((c: any) => c.id === course.id)) {
-              allCourses.push(course);
-            }
-          });
-        });
-      }
-
-      // Get original completed IDs and other data from the plan
-      const originalCompletedIds = plan.originalCompletedIds || [];
-      const completedCoursesData = plan.completedCoursesData || [];
-      const allElectiveOptions = plan.allElectiveOptions || [];
-
-      // Store data for editing
-      sessionStorage.setItem('allCourses', JSON.stringify(allCourses));
-      sessionStorage.setItem('originalCompletedIds', JSON.stringify(originalCompletedIds));
-      sessionStorage.setItem('completedCoursesData', JSON.stringify(completedCoursesData));
-      sessionStorage.setItem('allElectiveOptions', JSON.stringify(allElectiveOptions));
-      sessionStorage.setItem('editingPlanId', planId);
-      sessionStorage.setItem('returnTo', 'saved-plan-view');
-    }
+    sessionStorage.setItem('editingPlanId', planId);
+    sessionStorage.setItem('returnTo', 'saved-plan-view');
     navigate('/drag-drop-planning');
   };
 
@@ -238,7 +327,7 @@ export function SavedPlanView({ onNavigate, planId }: SavedPlanViewProps) {
         <Button
           variant="ghost"
           className="mb-4"
-          onClick={() => onNavigate('plan-selection')}
+          onClick={() => navigate('/plan-selection')}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Plans

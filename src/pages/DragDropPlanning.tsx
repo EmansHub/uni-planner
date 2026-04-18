@@ -259,12 +259,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    const allCurriculumCourses: Course[] = [];
+    const nonElectiveCourses: Course[] = [];
     const electiveCourses: Course[] = [];
 
     (curriculumRows || []).forEach((row: any) => {
       const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
       if (!courseInfo) return;
+
+      const isElectiveCategory = row.course_category.toLowerCase().includes('elective');
 
       const builtCourse: Course = {
         id: courseInfo.id,
@@ -277,47 +279,70 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         prerequisites: prereqMap.get(courseInfo.id) || undefined,
         requiredHours: courseInfo.required_hours ?? undefined,
         mustBeAlone: courseInfo.must_be_alone ?? false,
-        electiveCategory: row.course_category.toLowerCase().includes('elective')
-          ? row.course_category
-          : undefined,
+        electiveCategory: isElectiveCategory ? row.course_category : undefined,
       };
 
-      allCurriculumCourses.push(builtCourse);
-
-      if (row.course_category.toLowerCase().includes('elective')) {
+      if (isElectiveCategory) {
         electiveCourses.push(builtCourse);
+      } else {
+        nonElectiveCourses.push(builtCourse);
       }
     });
 
-    const plannedCourseIds = new Set(
-      loadedSemesters.flatMap((sem) => sem.courses.map((course) => course.id))
-    );
+    const plannedCourseIds = new Set<string>();
+    const plannedCourseCodes = new Set<string>();
 
-    const completedCourseIds = new Set(
-      loadedCompletedCourses.map((course) => course.id)
-    );
+    loadedSemesters.forEach((sem) => {
+      sem.courses.forEach((course) => {
+        plannedCourseIds.add(String(course.id).replace(/\s+/g, '').toUpperCase());
+        plannedCourseCodes.add(String(course.code).replace(/\s+/g, '').toUpperCase());
+      });
+    });
 
-    const remainingCourses = allCurriculumCourses.filter(
-      (course) =>
-        !plannedCourseIds.has(course.id) &&
-        !completedCourseIds.has(course.id)
-    );
+    const completedCourseIds = new Set<string>();
+    const completedCourseCodes = new Set<string>();
 
-    setCoursesToTake(remainingCourses);
-    setAvailableElectives(electiveCourses);
-    setLoadingPlan(false);
+    loadedCompletedCourses.forEach((course) => {
+      completedCourseIds.add(String(course.id).replace(/\s+/g, '').toUpperCase());
+      completedCourseCodes.add(String(course.code).replace(/\s+/g, '').toUpperCase());
+    });
+
+    const dedupedMap = new Map<string, Course>();
+
+    nonElectiveCourses.forEach((course) => {
+      const normalizedId = String(course.id).replace(/\s+/g, '').toUpperCase();
+      const normalizedCode = String(course.code).replace(/\s+/g, '').toUpperCase();
+
+      const alreadyPlanned =
+        plannedCourseIds.has(normalizedId) || plannedCourseCodes.has(normalizedCode);
+
+      const alreadyCompleted =
+        completedCourseIds.has(normalizedId) || completedCourseCodes.has(normalizedCode);
+
+      if (!alreadyPlanned && !alreadyCompleted) {
+        if (!dedupedMap.has(normalizedId)) {
+          dedupedMap.set(normalizedId, course);
+        }
+      }
+    });
+
+  const remainingNonElectives = Array.from(dedupedMap.values());
+
+  setCoursesToTake(remainingNonElectives);
+  setAvailableElectives(electiveCourses);
+  setLoadingPlan(false);
   };
 
-    const loadTotalRequiredCredits = async () => {
-      const { data, error } = await supabase
-        .from('curriculum_sections')
-        .select('required_credits')
-        .eq('degree_program_code', user.major);
+  const loadTotalRequiredCredits = async () => {
+    const { data, error } = await supabase
+      .from('curriculum_sections')
+      .select('required_credits')
+      .eq('degree_program_code', user.major);
 
-      if (error) {
-        console.error('Error loading total required credits:', error);
-        return;
-      }
+    if (error) {
+      console.error('Error loading total required credits:', error);
+      return;
+    }
 
     const total = (data || []).reduce(
       (sum: number, row: any) => sum + (row.required_credits || 0),
@@ -347,13 +372,13 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     // Store completed courses for restrictions dropdown
     setCompletedCourses(completedCoursesData);
-    
+
     // Store available elective options
     setAvailableElectives(allElectiveOptions);
 
     // Get courses that are currently being taken
     const currentCoursesObjects = allCourses.filter((course: Course) => currentCourseIds.includes(course.id));
-    
+
     // Get remaining courses (not completed and not currently taking)
     const remaining = allCourses.filter(
       (course: Course) => !completedCourseIds.includes(course.id) && !currentCourseIds.includes(course.id)
@@ -361,7 +386,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     setCoursesToTake(remaining);
     setLoadingPlan(false);
-    
+
     // Automatically place currently taken courses in Fall 2025 (current semester)
     if (currentCoursesObjects.length > 0) {
       setSemesters(prev => prev.map(sem =>
@@ -439,14 +464,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Calculate total hours (completed + planned) before a specific semester
     // This is used for standing requirements (Sophomore=30, Junior=60, Senior=90)
     const completedHours = getTotalCompletedCredits();
-    
+
     // Sort semesters chronologically
     const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
     const targetIndex = sortedSemesters.findIndex(s => s.id === targetSemesterId);
-    
+
     // Get all semesters before the target semester
     const previousSemesters = sortedSemesters.slice(0, targetIndex);
-    
+
     // Sum credits from previous semesters (excluding prep courses)
     const plannedHours = previousSemesters.reduce((sum, sem) => {
       const semCredits = sem.courses.reduce((cSum, course) => {
@@ -455,7 +480,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }, 0);
       return sum + semCredits;
     }, 0);
-    
+
     return completedHours + plannedHours;
   };
 
@@ -473,7 +498,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Academic year 2026/27: Fall 2026, Spring 2027, Summer 2027
     const [type, yearStr] = semesterId.split('-');
     const year = parseInt(yearStr);
-    
+
     // Fall starts the academic year: Fall 2025 = 20250
     // Spring/Summer belong to the academic year that started with the previous Fall
     // So Spring 2026 (part of 2025/26) = 20255, Summer 2026 = 20257
@@ -488,7 +513,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     const [type, yearStr] = semesterId.split('-');
     const year = parseInt(yearStr);
     const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
-    
+
     if (type === 'fall') {
       // Fall 2025 is part of 2025/26 academic year
       return `${capitalizedType} ${year}/${(year + 1).toString().slice(-2)}`;
@@ -503,7 +528,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     if (semesterType === 'summer') {
       // Find all spring semesters and check which don't have summer after them
       const springSemesters = semesters.filter(s => s.id.includes('spring'));
-      
+
       if (springSemesters.length === 0) {
         toast.error('No spring semester found. Add a spring semester first.');
         return;
@@ -546,7 +571,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       // Sort semesters chronologically to find the last one
       const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
       const lastSemester = sortedSemesters[sortedSemesters.length - 1];
-      
+
       // Count existing semesters
       const fallCount = semesters.filter(s => s.id.includes('fall')).length;
       const springCount = semesters.filter(s => s.id.includes('spring')).length;
@@ -561,7 +586,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         // Fall can only be added after Spring or Summer
         const [lastType, lastYearStr] = lastSemester.id.split('-');
         const lastYear = parseInt(lastYearStr);
-        
+
         if (lastType === 'fall') {
           toast.error('Cannot add Fall after Fall. Add Spring first.');
           return;
@@ -596,7 +621,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         // Insert in chronological order
         const newSemesters = [...semesters, newSemester];
         newSemesters.sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
-        
+
         setSemesters(newSemesters);
         toast.success(`Added ${formatSemesterName(newSemesterId)}`);
       } else if (semesterType === 'spring') {
@@ -609,7 +634,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         // Spring can only be added after Fall
         const [lastType, lastYearStr] = lastSemester.id.split('-');
         const lastYear = parseInt(lastYearStr);
-        
+
         if (lastType === 'spring' || lastType === 'summer') {
           toast.error('Cannot add Spring after Spring/Summer. Add Fall first.');
           return;
@@ -635,7 +660,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         // Insert in chronological order
         const newSemesters = [...semesters, newSemester];
         newSemesters.sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
-        
+
         setSemesters(newSemesters);
         toast.success(`Added ${formatSemesterName(newSemesterId)}`);
       }
@@ -645,7 +670,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const removeSemester = (semesterId: string) => {
     const semester = semesters.find(s => s.id === semesterId);
     if (!semester) return;
-    
+
     // Summer semesters can always be removed
     if (semester.isSummer) {
       // Move courses back to available
@@ -657,15 +682,15 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       toast.success(`Removed ${formatSemesterName(semesterId)}`);
       return;
     }
-    
+
     // For Fall/Spring: Sort semesters chronologically and get the first 8 non-summer semesters
     const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
     const nonSummerSemesters = sortedSemesters.filter(s => !s.isSummer);
     const first8NonSummer = nonSummerSemesters.slice(0, 8);
-    
+
     // Check if this semester is in the first 8 non-summer semesters
     const isInFirst8 = first8NonSummer.some(s => s.id === semesterId);
-    
+
     if (isInFirst8) {
       toast.error('Cannot remove default semesters from the 4-year plan. Only additional semesters can be removed.');
       return;
@@ -693,7 +718,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       // This is an already-selected elective that can be changed
       // Store the original course so we can replace it
       setOriginalElectiveToReplace(course);
-      
+
       // Create a temporary placeholder to represent the category
       const tempPlaceholder: Course = {
         id: `temp-placeholder-${course.electiveCategory}`,
@@ -718,7 +743,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     // Find the selected elective course
     const electiveCourse = availableElectives.find(c => c.id === selectedElectiveCourse);
-    
+
     if (!electiveCourse) {
       toast.error('Could not find selected elective course');
       return;
@@ -733,21 +758,21 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Determine which ID to replace
     // If we're changing an existing elective, use the original course's ID
     // Otherwise, use the placeholder's ID
-    const idToReplace = originalElectiveToReplace 
-      ? originalElectiveToReplace.id 
+    const idToReplace = originalElectiveToReplace
+      ? originalElectiveToReplace.id
       : selectedElectivePlaceholder.id;
 
     // Replace the specific placeholder/elective that was clicked
-    setCoursesToTake(prev => prev.map(c => 
+    setCoursesToTake(prev => prev.map(c =>
       c.id === idToReplace ? electiveCourseWithCategory : c
     ));
     setSemesters(prev => prev.map(sem => ({
       ...sem,
-      courses: sem.courses.map(c => 
+      courses: sem.courses.map(c =>
         c.id === idToReplace ? electiveCourseWithCategory : c
       )
     })));
-    
+
     if (originalElectiveToReplace) {
       toast.success(`Changed elective to ${electiveCourse.code} - ${electiveCourse.name}`);
     } else {
@@ -767,7 +792,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       toast.info('Please select a specific elective course first by clicking on it');
       return;
     }
-    
+
     // Selected electives (with electiveCategory but not isElectiveOption) CAN be dragged
     setDraggedCourse(course);
     setDraggedFromSemester(source);
@@ -815,7 +840,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Check semester-specific course availability
     if (targetSemester !== 'available') {
       const semesterType = targetSemester.split('-')[0]; // 'fall', 'spring', or 'summer'
-      
+
       // Check if course is Fall-only and being placed in Spring
       if (FALL_ONLY_COURSES.includes(draggedCourse.code) && semesterType === 'spring') {
         toast.error(`${draggedCourse.code} is only offered in Fall semesters. Please place it in a Fall semester.`);
@@ -824,7 +849,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         setDragOverSemester(null);
         return;
       }
-      
+
       // Check if course is Spring-only and being placed in Fall
       if (SPRING_ONLY_COURSES.includes(draggedCourse.code) && semesterType === 'fall') {
         toast.error(`${draggedCourse.code} is only offered in Spring semesters. Please place it in a Spring semester.`);
@@ -833,7 +858,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         setDragOverSemester(null);
         return;
       }
-      
+
       // Summer semesters - check restrictions for both Fall and Spring only courses
       if (semesterType === 'summer') {
         if (FALL_ONLY_COURSES.includes(draggedCourse.code)) {
@@ -859,24 +884,24 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       if (targetSem) {
         // Check if course can override prerequisites
         const canOverride = restrictions.overrideCourses.some(override => override.courseId === draggedCourse.id && override.verified);
-        
+
         if (!canOverride) {
           // Sort semesters chronologically
           const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
           const targetIndex = sortedSemesters.findIndex(s => s.id === targetSemester);
-          
+
           // Get all semesters before the target semester
           const previousSemesters = sortedSemesters.slice(0, targetIndex);
-          
+
           // Get all courses in previous semesters plus completed courses
           const previousCourseIds = new Set([
             ...completedCourses.map(c => c.id),
             ...previousSemesters.flatMap(sem => sem.courses.map(c => c.id))
           ]);
-          
+
           // Check if all prerequisites are satisfied
           const missingPrereqs = draggedCourse.prerequisites.filter(prereqId => !previousCourseIds.has(prereqId));
-          
+
           if (missingPrereqs.length > 0) {
             // Find the prerequisite course names for better error message
             const allCourses = [...coursesToTake, ...completedCourses, ...semesters.flatMap(s => s.courses)];
@@ -884,7 +909,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
               const course = allCourses.find(c => c.id === id);
               return course ? course.code : id;
             }).join(', ');
-            
+
             toast.error(`Cannot add ${draggedCourse.code}. Missing prerequisites: ${prereqNames}. Place them in an earlier semester first.`);
             setDraggedCourse(null);
             setDraggedFromSemester(null);
@@ -898,16 +923,16 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Check standing requirements (hour-based prerequisites)
     if (targetSemester !== 'available' && draggedCourse.requiredHours) {
       const canOverride = restrictions.overrideCourses.some(
-      override => override.courseId === draggedCourse.id && override.verified
-    );
-      
+        override => override.courseId === draggedCourse.id && override.verified
+      );
+
       if (!canOverride) {
         const hoursBeforeSemester = getHoursBeforeSemester(targetSemester);
-        
+
         if (hoursBeforeSemester < draggedCourse.requiredHours) {
-          const standingName = draggedCourse.requiredHours === 30 ? 'Sophomore' : 
-                               draggedCourse.requiredHours === 60 ? 'Junior' : 
-                               draggedCourse.requiredHours === 90 ? 'Senior' : `${draggedCourse.requiredHours}-hour`;
+          const standingName = draggedCourse.requiredHours === 30 ? 'Sophomore' :
+            draggedCourse.requiredHours === 60 ? 'Junior' :
+              draggedCourse.requiredHours === 90 ? 'Senior' : `${draggedCourse.requiredHours}-hour`;
           toast.error(`Cannot add ${draggedCourse.code}. Requires ${standingName} standing (${draggedCourse.requiredHours} hours). You will have ${hoursBeforeSemester} hours before this semester.`);
           setDraggedCourse(null);
           setDraggedFromSemester(null);
@@ -968,7 +993,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         const courseHours = draggedCourse.isPrepCourse ? (draggedCourse.semesterHours || 0) : draggedCourse.credits;
         const isNextSemester = semesters.indexOf(targetSem) === 0;
         const maxCredits = getMaxCredits(targetSem, isNextSemester);
-        
+
         if (currentHours + courseHours > maxCredits) {
           toast.error(`Cannot add course. This would exceed the ${maxCredits} hour limit for ${targetSem.name}.`);
           setDraggedCourse(null);
@@ -1016,11 +1041,11 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       // Helper function to check if all prerequisites are satisfied
       const prerequisitesSatisfied = (course: Course, placedCourses: Set<string>): boolean => {
         if (!course.prerequisites || course.prerequisites.length === 0) return true;
-        
+
         // Check if course can override prerequisites
         if (restrictions.overrideCourses.some(override => override.courseId === course.id && override.verified)) return true;
-        
-        return course.prerequisites.every(prereqId => 
+
+        return course.prerequisites.every(prereqId =>
           placedCourses.has(prereqId) || completedCourses.some(c => c.id === prereqId)
         );
       };
@@ -1028,58 +1053,58 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       // Helper function to check standing requirements
       const standingRequirementsMet = (course: Course, totalHoursBeforeSemester: number): boolean => {
         if (!course.requiredHours) return true;
-        
+
         // Check if course can override standing requirements
         if (
           restrictions.overrideCourses.some(
             override => override.courseId === course.id && override.verified
           )
         ) return true;
-        
+
         return totalHoursBeforeSemester >= course.requiredHours;
       };
 
       // Generate a plan with a specific strategy
       const generatePlan = (strategy: 'balanced' | 'frontloaded' | 'backloaded'): Semester[] => {
         // Start with existing courses already in semesters
-        const planSemesters: Semester[] = semesters.map(sem => ({ 
-          ...sem, 
-          courses: [...sem.courses] 
+        const planSemesters: Semester[] = semesters.map(sem => ({
+          ...sem,
+          courses: [...sem.courses]
         }));
         const remainingCourses = [...coursesToTake];
         const placedCourseIds = new Set<string>();
-        
+
         // Track courses already placed in semesters
         planSemesters.forEach(sem => {
           sem.courses.forEach(course => {
             placedCourseIds.add(course.id);
           });
         });
-        
+
         // Sort semesters chronologically
         const sortedSemesters = [...planSemesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
-        
+
         for (let semIndex = 0; semIndex < sortedSemesters.length; semIndex++) {
           const semester = sortedSemesters[semIndex];
           const isSummer = semester.isSummer;
           const maxCredits = isSummer ? 9 : 20;
-          
+
           // Calculate total hours before this semester (including completed and courses in previous semesters)
           let hoursBeforeSemester = getTotalCompletedCredits();
           for (let i = 0; i < semIndex; i++) {
-            hoursBeforeSemester += sortedSemesters[i].courses.reduce((sum, c) => 
+            hoursBeforeSemester += sortedSemesters[i].courses.reduce((sum, c) =>
               c.isPrepCourse ? sum : sum + c.credits, 0
             );
           }
-          
+
           // Calculate current hours in this semester (from already placed courses)
           let semesterHours = semester.courses.reduce((sum, c) => {
             return sum + (c.isPrepCourse ? (c.semesterHours || 0) : c.credits);
           }, 0);
-          
+
           // Check if any course must be alone
           const hasAloneCourse = semester.courses.some(c => c.mustBeAlone);
-          
+
           // Determine target credits based on strategy
           let targetCredits = maxCredits;
           if (strategy === 'balanced') {
@@ -1089,50 +1114,50 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           } else if (strategy === 'backloaded') {
             targetCredits = semIndex >= sortedSemesters.length / 2 ? maxCredits : (isSummer ? 6 : 12);
           }
-          
+
           // Skip adding more courses if we already have a course that must be alone
           if (hasAloneCourse) continue;
-          
+
           // Add courses that can be taken
           let changed = true;
           while (changed && semesterHours < targetCredits && remainingCourses.length > 0) {
             changed = false;
-            
+
             for (let i = remainingCourses.length - 1; i >= 0; i--) {
               const course = remainingCourses[i];
               const courseHours = course.isPrepCourse ? (course.semesterHours || 0) : course.credits;
-              
+
               // Check if adding this course would exceed limits
               if (semesterHours + courseHours > maxCredits) continue;
-              
+
               // Check if course must be alone (and semester has other courses)
               if (course.mustBeAlone && semester.courses.length > 0) continue;
-              
+
               // Check semester-specific course availability
               const semesterType = semester.id.split('-')[0]; // 'fall', 'spring', or 'summer'
               if (semesterType === 'fall' && SPRING_ONLY_COURSES.includes(course.code)) continue;
               if (semesterType === 'spring' && FALL_ONLY_COURSES.includes(course.code)) continue;
               if (semesterType === 'summer' && (FALL_ONLY_COURSES.includes(course.code) || SPRING_ONLY_COURSES.includes(course.code))) continue;
-              
+
               // Check prerequisites
               if (!prerequisitesSatisfied(course, placedCourseIds)) continue;
-              
+
               // Check standing requirements
               if (!standingRequirementsMet(course, hoursBeforeSemester)) continue;
-              
+
               // Add course to semester
               semester.courses.push(course);
               semesterHours += courseHours;
               placedCourseIds.add(course.id);
               remainingCourses.splice(i, 1);
               changed = true;
-              
+
               // If course must be alone, stop adding to this semester
               if (course.mustBeAlone) break;
             }
           }
         }
-        
+
         // Map back to original semester order
         return planSemesters.map(sem => {
           const sorted = sortedSemesters.find(s => s.id === sem.id);
@@ -1250,17 +1275,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     }
 
     // 3. Save semester courses
-      const semesterCourseRows = semesters.flatMap((semester) =>
-        semester.courses
-          .filter((course) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
-          .map((course, index) => ({
-            degree_plan_id: savedPlanId,
-            semester_key: semester.id,
-            course_id: course.id,
-            display_order: index,
-            elective_category: course.electiveCategory || null,
-          }))
-      );
+    const semesterCourseRows = semesters.flatMap((semester) =>
+      semester.courses
+        .filter((course) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
+        .map((course, index) => ({
+          degree_plan_id: savedPlanId,
+          semester_key: semester.id,
+          course_id: course.id,
+          display_order: index,
+          elective_category: course.electiveCategory || null,
+        }))
+    );
 
     if (semesterCourseRows.length > 0) {
       const { error: semesterCourseError } = await supabase
@@ -1347,7 +1372,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
   const handleRepeatCourseChange = (courseId: string) => {
     if (courseId === 'none') return;
-    
+
     // Check if already added
     if (restrictions.repeatCourseIds.includes(courseId)) {
       toast.info('This course is already selected to repeat');
@@ -1355,9 +1380,9 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     }
 
     // Add to repeat courses array
-    setRestrictions(prev => ({ 
-      ...prev, 
-      repeatCourseIds: [...prev.repeatCourseIds, courseId] 
+    setRestrictions(prev => ({
+      ...prev,
+      repeatCourseIds: [...prev.repeatCourseIds, courseId]
     }));
 
     // Add course to available courses if not already there
@@ -1373,16 +1398,16 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       ...prev,
       repeatCourseIds: prev.repeatCourseIds.filter(id => id !== courseId)
     }));
-    
+
     // Remove from courses to take
     setCoursesToTake(prev => prev.filter(c => c.id !== courseId));
-    
+
     // Remove from any semester it might be in
     setSemesters(prev => prev.map(semester => ({
       ...semester,
       courses: semester.courses.filter(c => c.id !== courseId)
     })));
-    
+
     toast.success('Repeat course removed');
   };
 
@@ -1401,7 +1426,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         toast.error('File size must be less than 5MB');
         return;
       }
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setUploadedProofImage(reader.result as string);
@@ -1412,10 +1437,10 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
   const handleVerifyProof = () => {
     if (!uploadedProofImage || !selectedOverrideCourse) return;
-    
+
     setIsVerifyingProof(true);
     toast.info('AI is verifying your override proof...');
-    
+
     // Simulate AI verification (2 seconds)
     setTimeout(() => {
       // For prototype: accept all proofs
@@ -1568,7 +1593,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                     <p className="text-xs text-slate-600">
                       Select completed courses you want to retake (you can select multiple)
                     </p>
-                    
+
                     {/* Display selected repeat courses */}
                     {restrictions.repeatCourseIds.length > 0 && (
                       <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
@@ -1601,72 +1626,72 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                       </p>
                     ) : (
                       <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                        Prerequisite overrides are only available after completing 90+ credit hours. 
+                        Prerequisite overrides are only available after completing 90+ credit hours.
                         You currently have {getTotalCompletedCredits()} credit hours completed.
                       </p>
                     )}
-                    
+
                     {getTotalCompletedCredits() >= 90 && (
                       <>
-                      
-                      {/* Dropdown to add courses */}
-                      <Select
-                        value=""
-                        onValueChange={handleSelectOverrideCourse}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a course to override..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {coursesToTake
-                            .filter(course => 
-                              course.prerequisites && 
-                              course.prerequisites.length > 0 &&
-                              !restrictions.overrideCourses.some(override => override.courseId === course.id)
-                            )
-                            .length === 0 ? (
-                            <div className="px-2 py-1.5 text-sm text-slate-400">
-                              No courses with prerequisites available
-                            </div>
-                          ) : (
-                            coursesToTake
-                              .filter(course => 
-                                course.prerequisites && 
+
+                        {/* Dropdown to add courses */}
+                        <Select
+                          value=""
+                          onValueChange={handleSelectOverrideCourse}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a course to override..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {coursesToTake
+                              .filter(course =>
+                                course.prerequisites &&
                                 course.prerequisites.length > 0 &&
                                 !restrictions.overrideCourses.some(override => override.courseId === course.id)
                               )
-                              .map(course => (
-                                <SelectItem key={course.id} value={course.id}>
-                                  {course.code} - {course.name}
-                                </SelectItem>
-                              ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                              .length === 0 ? (
+                              <div className="px-2 py-1.5 text-sm text-slate-400">
+                                No courses with prerequisites available
+                              </div>
+                            ) : (
+                              coursesToTake
+                                .filter(course =>
+                                  course.prerequisites &&
+                                  course.prerequisites.length > 0 &&
+                                  !restrictions.overrideCourses.some(override => override.courseId === course.id)
+                                )
+                                .map(course => (
+                                  <SelectItem key={course.id} value={course.id}>
+                                    {course.code} - {course.name}
+                                  </SelectItem>
+                                ))
+                            )}
+                          </SelectContent>
+                        </Select>
 
-                      {/* Display selected override courses */}
-                      {restrictions.overrideCourses.length > 0 && (
-                        <div className="space-y-2 border rounded-lg p-3 bg-slate-50">
-                          <p className="text-xs text-slate-500">Courses with approved overrides:</p>
-                          <div className="space-y-2">
-                            {restrictions.overrideCourses.map(override => {
-                              const course = [...coursesToTake, ...semesters.flatMap(s => s.courses)].find(c => c.id === override.courseId);
-                              return course ? (
-                                <div key={override.courseId} className="flex items-center justify-between p-2 bg-white rounded border">
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
-                                    <span className="text-sm">{course.code} - {course.name}</span>
+                        {/* Display selected override courses */}
+                        {restrictions.overrideCourses.length > 0 && (
+                          <div className="space-y-2 border rounded-lg p-3 bg-slate-50">
+                            <p className="text-xs text-slate-500">Courses with approved overrides:</p>
+                            <div className="space-y-2">
+                              {restrictions.overrideCourses.map(override => {
+                                const course = [...coursesToTake, ...semesters.flatMap(s => s.courses)].find(c => c.id === override.courseId);
+                                return course ? (
+                                  <div key={override.courseId} className="flex items-center justify-between p-2 bg-white rounded border">
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                      <span className="text-sm">{course.code} - {course.name}</span>
+                                    </div>
+                                    <X
+                                      className="w-4 h-4 cursor-pointer hover:text-red-600"
+                                      onClick={() => removeOverrideCourse(override.courseId)}
+                                    />
                                   </div>
-                                  <X 
-                                    className="w-4 h-4 cursor-pointer hover:text-red-600" 
-                                    onClick={() => removeOverrideCourse(override.courseId)}
-                                  />
-                                </div>
-                              ) : null;
-                            })}
+                                ) : null;
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
                       </>
                     )}
                   </div>
@@ -1710,7 +1735,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                       </div>
                     </div>
                   )}
-                  
+
                   {!uploadedProofImage ? (
                     <div className="space-y-3">
                       <Label htmlFor="proof-upload">Approval Document</Label>
@@ -1729,13 +1754,13 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                     <div className="space-y-3">
                       <Label>Uploaded Proof</Label>
                       <div className="border rounded-lg p-3 bg-slate-50">
-                        <img 
-                          src={uploadedProofImage} 
-                          alt="Proof of override approval" 
+                        <img
+                          src={uploadedProofImage}
+                          alt="Proof of override approval"
                           className="w-full h-48 object-contain rounded"
                         />
                       </div>
-                      
+
                       {!isVerifyingProof && (
                         <Button
                           variant="outline"
@@ -1755,8 +1780,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                   )}
 
                   {uploadedProofImage && (
-                    <Button 
-                      className="w-full" 
+                    <Button
+                      className="w-full"
                       onClick={handleVerifyProof}
                       disabled={isVerifyingProof}
                     >
@@ -1943,7 +1968,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
         {/* HORIZONTAL LAYOUT - Semesters LEFT, Available Courses RIGHT */}
         <div className="grid grid-cols-1 md:grid-cols-[1fr_350px] gap-6">
-          
+
           {/* LEFT SIDE - Semesters in 2x2 grid */}
           <div className="space-y-4">
             <Card className="bg-white/50 backdrop-blur">
@@ -1990,13 +2015,13 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                                 </Button>
                               );
                             }
-                            
+
                             // For Fall/Spring: Check if this semester is in the first 8 non-summer semesters
                             const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
                             const nonSummerSemesters = sortedSemesters.filter(s => !s.isSummer);
                             const first8NonSummer = nonSummerSemesters.slice(0, 8);
                             const isInFirst8 = first8NonSummer.some(s => s.id === semester.id);
-                            
+
                             return !isInFirst8 ? (
                               <Button
                                 variant="ghost"
@@ -2045,8 +2070,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                                         </div>
                                         <p className="text-xs text-slate-600 truncate">{course.name}</p>
                                       </div>
-                                      <Badge 
-                                        variant={course.isPrepCourse ? "secondary" : "outline"} 
+                                      <Badge
+                                        variant={course.isPrepCourse ? "secondary" : "outline"}
                                         className="flex-shrink-0 text-xs"
                                       >
                                         {course.isPrepCourse ? `${course.semesterHours}h` : `${course.credits}cr`}
@@ -2065,11 +2090,10 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                         </div>
                       ) : (
                         <div
-                          className={`min-h-[200px] border-2 border-dashed rounded-lg p-3 transition-all ${
-                            dragOverSemester === semester.id
-                              ? 'border-[#E87722] bg-orange-50 shadow-lg'
-                              : 'border-slate-300 bg-slate-50/50'
-                          }`}
+                          className={`min-h-[200px] border-2 border-dashed rounded-lg p-3 transition-all ${dragOverSemester === semester.id
+                            ? 'border-[#E87722] bg-orange-50 shadow-lg'
+                            : 'border-slate-300 bg-slate-50/50'
+                            }`}
                           onDragOver={handleDragOver}
                           onDragEnter={() => setDragOverSemester(semester.id)}
                           onDragLeave={() => setDragOverSemester(null)}
@@ -2082,74 +2106,73 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                             {semester.courses.map(course => {
                               const isElectiveCourse = course.electiveCategory && !course.isElectiveOption;
                               return (
-                              <div
-                                key={course.id}
-                                draggable={true}
-                                onDragStart={() => handleDragStart(course, semester.id)}
-                                onDragEnd={() => {
-                                  setDraggedCourse(null);
-                                  setDraggedFromSemester(null);
-                                  setDragOverSemester(null);
-                                }}
-                                onClick={() => isElectiveCourse && handleElectiveClick(course)}
-                                className={`bg-white border rounded-lg p-2.5 hover:shadow-md transition-shadow ${
-                                  isElectiveCourse 
-                                    ? 'border-slate-300 bg-slate-50/50 cursor-pointer' 
+                                <div
+                                  key={course.id}
+                                  draggable={true}
+                                  onDragStart={() => handleDragStart(course, semester.id)}
+                                  onDragEnd={() => {
+                                    setDraggedCourse(null);
+                                    setDraggedFromSemester(null);
+                                    setDragOverSemester(null);
+                                  }}
+                                  onClick={() => isElectiveCourse && handleElectiveClick(course)}
+                                  className={`bg-white border rounded-lg p-2.5 hover:shadow-md transition-shadow ${isElectiveCourse
+                                    ? 'border-slate-300 bg-slate-50/50 cursor-pointer'
                                     : 'border-slate-200 cursor-grab active:cursor-grabbing'
-                                }`}
-                              >
-                                <div className="flex items-start gap-2">
-                                  {isElectiveCourse ? (
-                                    <Settings className="w-4 h-4 text-slate-600 mt-0.5 flex-shrink-0" />
-                                  ) : (
-                                    <GripVertical className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                          <h4 className={`font-medium text-sm ${isElectiveCourse ? 'text-slate-700' : ''}`}>{course.code}</h4>
-                                          {course.isPrepCourse && (
-                                            <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight">
-                                              PREP
-                                            </Badge>
-                                          )}
-                                          {isElectiveCourse && (
-                                            <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight bg-slate-100 text-slate-700 border-slate-300">
-                                              CLICK TO CHANGE
-                                            </Badge>
-                                          )}
+                                    }`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    {isElectiveCourse ? (
+                                      <Settings className="w-4 h-4 text-slate-600 mt-0.5 flex-shrink-0" />
+                                    ) : (
+                                      <GripVertical className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-1.5">
+                                            <h4 className={`font-medium text-sm ${isElectiveCourse ? 'text-slate-700' : ''}`}>{course.code}</h4>
+                                            {course.isPrepCourse && (
+                                              <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight">
+                                                PREP
+                                              </Badge>
+                                            )}
+                                            {isElectiveCourse && (
+                                              <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight bg-slate-100 text-slate-700 border-slate-300">
+                                                CLICK TO CHANGE
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-slate-600 truncate">{course.name}</p>
+                                          {(course.prerequisites && course.prerequisites.length > 0) || course.requiredHours || course.mustBeAlone ? (
+                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                              {course.prerequisites && course.prerequisites.length > 0 && (
+                                                <>Prereqs: {course.prerequisites.map(id => {
+                                                  const prereq = [...coursesToTake, ...completedCourses, ...semesters.flatMap(s => s.courses)].find(c => c.id === id);
+                                                  return prereq?.code.split(' ')[1] || id;
+                                                }).join(', ')}</>
+                                              )}
+                                              {course.prerequisites && course.prerequisites.length > 0 && course.requiredHours && ' • '}
+                                              {course.requiredHours && (
+                                                <>{course.requiredHours === 30 ? 'Sophomore' : course.requiredHours === 60 ? 'Junior' : course.requiredHours === 90 ? 'Senior' : `${course.requiredHours}hr`} standing</>
+                                              )}
+                                              {course.mustBeAlone && (
+                                                <> • Must be alone</>
+                                              )}
+                                            </p>
+                                          ) : null}
                                         </div>
-                                        <p className="text-xs text-slate-600 truncate">{course.name}</p>
-                                        {(course.prerequisites && course.prerequisites.length > 0) || course.requiredHours || course.mustBeAlone ? (
-                                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                            {course.prerequisites && course.prerequisites.length > 0 && (
-                                              <>Prereqs: {course.prerequisites.map(id => {
-                                                const prereq = [...coursesToTake, ...completedCourses, ...semesters.flatMap(s => s.courses)].find(c => c.id === id);
-                                                return prereq?.code.split(' ')[1] || id;
-                                              }).join(', ')}</>
-                                            )}
-                                            {course.prerequisites && course.prerequisites.length > 0 && course.requiredHours && ' • '}
-                                            {course.requiredHours && (
-                                              <>{course.requiredHours === 30 ? 'Sophomore' : course.requiredHours === 60 ? 'Junior' : course.requiredHours === 90 ? 'Senior' : `${course.requiredHours}hr`} standing</>
-                                            )}
-                                            {course.mustBeAlone && (
-                                              <> • Must be alone</>
-                                            )}
-                                          </p>
-                                        ) : null}
+                                        <Badge
+                                          variant={course.isPrepCourse ? "secondary" : "outline"}
+                                          className="flex-shrink-0 text-xs"
+                                        >
+                                          {course.isPrepCourse ? `${course.semesterHours}h` : `${course.credits}cr`}
+                                        </Badge>
                                       </div>
-                                      <Badge 
-                                        variant={course.isPrepCourse ? "secondary" : "outline"} 
-                                        className="flex-shrink-0 text-xs"
-                                      >
-                                        {course.isPrepCourse ? `${course.semesterHours}h` : `${course.credits}cr`}
-                                      </Badge>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                            );
+                              );
                             })}
                             {semester.courses.length === 0 && (
                               <div className="text-center text-slate-400 py-12 pointer-events-none">
@@ -2177,11 +2200,10 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
             </CardHeader>
             <CardContent>
               <div
-                className={`h-[calc(100vh-280px)] overflow-y-auto space-y-2 p-2 rounded-lg transition-all ${
-                  dragOverSemester === 'available'
-                    ? 'bg-orange-50 border-2 border-dashed border-[#E87722]'
-                    : ''
-                }`}
+                className={`h-[calc(100vh-280px)] overflow-y-auto space-y-2 p-2 rounded-lg transition-all ${dragOverSemester === 'available'
+                  ? 'bg-orange-50 border-2 border-dashed border-[#E87722]'
+                  : ''
+                  }`}
                 onDragOver={handleDragOver}
                 onDragEnter={() => setDragOverSemester('available')}
                 onDragLeave={() => setDragOverSemester(null)}
@@ -2193,7 +2215,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                 {coursesToTake.map(course => {
                   const isRepeatCourse = restrictions.repeatCourseIds.includes(course.id);
                   const isElectivePlaceholder = course.isElectiveOption;
-                  
+
                   return (
                     <div
                       key={course.id}
@@ -2205,13 +2227,12 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                         setDragOverSemester(null);
                       }}
                       onClick={() => (isElectivePlaceholder || course.electiveCategory) && handleElectiveClick(course)}
-                      className={`bg-white border rounded-lg p-3 hover:shadow-md transition-shadow ${
-                        isElectivePlaceholder 
-                          ? 'border-slate-300 bg-slate-50 cursor-pointer hover:bg-slate-100' 
-                          : course.electiveCategory
-                            ? 'border-slate-300 bg-slate-50/50 cursor-pointer hover:bg-slate-100'
-                            : 'border-slate-200 cursor-grab active:cursor-grabbing'
-                      }`}
+                      className={`bg-white border rounded-lg p-3 hover:shadow-md transition-shadow ${isElectivePlaceholder
+                        ? 'border-slate-300 bg-slate-50 cursor-pointer hover:bg-slate-100'
+                        : course.electiveCategory
+                          ? 'border-slate-300 bg-slate-50/50 cursor-pointer hover:bg-slate-100'
+                          : 'border-slate-200 cursor-grab active:cursor-grabbing'
+                        }`}
                     >
                       <div className="flex items-start gap-2">
                         {isElectivePlaceholder ? (
@@ -2268,8 +2289,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                                 </p>
                               ) : null}
                             </div>
-                            <Badge 
-                              variant={course.isPrepCourse ? "secondary" : "outline"} 
+                            <Badge
+                              variant={course.isPrepCourse ? "secondary" : "outline"}
                               className="flex-shrink-0"
                             >
                               {course.isPrepCourse ? `${course.semesterHours}h` : `${course.credits}cr`}
@@ -2302,7 +2323,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
               )}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             {selectedElectivePlaceholder && (
               <>
@@ -2313,25 +2334,24 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                       // Check if this course is already selected/planned (excluding repeats)
                       const isAlreadyPlanned = [...coursesToTake, ...semesters.flatMap(s => s.courses)]
                         .some(c => c.id === course.id && !restrictions.repeatCourseIds.includes(c.id));
-                      
+
                       // Check if this course is completed
                       const isCompleted = completedCourses.some(c => c.id === course.id);
                       const isMarkedForRepeat = restrictions.repeatCourseIds.includes(course.id);
-                      
+
                       const isSelected = selectedElectiveCourse === course.id;
-                      
+
                       return (
-                        <Card 
-                          key={course.id} 
-                          className={`p-3 cursor-pointer transition-all ${
-                            isAlreadyPlanned 
-                              ? 'opacity-50 cursor-not-allowed bg-slate-100' 
-                              : isSelected 
-                                ? 'border-slate-400 border-2 bg-slate-50' 
-                                : (isCompleted && !isMarkedForRepeat)
-                                  ? 'opacity-50 hover:border-slate-300 hover:shadow-md'
-                                  : 'hover:border-slate-300 hover:shadow-md'
-                          }`}
+                        <Card
+                          key={course.id}
+                          className={`p-3 cursor-pointer transition-all ${isAlreadyPlanned
+                            ? 'opacity-50 cursor-not-allowed bg-slate-100'
+                            : isSelected
+                              ? 'border-slate-400 border-2 bg-slate-50'
+                              : (isCompleted && !isMarkedForRepeat)
+                                ? 'opacity-50 hover:border-slate-300 hover:shadow-md'
+                                : 'hover:border-slate-300 hover:shadow-md'
+                            }`}
                           onClick={() => !isAlreadyPlanned && setSelectedElectiveCourse(course.id)}
                         >
                           <div className="flex items-start justify-between gap-4">
@@ -2380,7 +2400,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                   <Button variant="outline" onClick={() => setShowElectiveDialog(false)}>
                     Cancel
                   </Button>
-                  <Button 
+                  <Button
                     onClick={handleElectiveSelection}
                     disabled={!selectedElectiveCourse}
                   >

@@ -376,14 +376,9 @@ function App() {
           path="/saved-plan-view"
           element={
             currentUser && selectedPlanId ? (
-              <SavedPlanView
-                onNavigate={setCurrentPage}
-                planId={selectedPlanId}
-              />
+              <SavedPlanView planId={selectedPlanId} />
             ) : (
-              <PlanSelection
-                onSelectPlan={setSelectedPlanId}
-              />
+              <PlanSelection onSelectPlan={setSelectedPlanId} />
             )
           }
         />
