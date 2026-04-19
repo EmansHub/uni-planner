@@ -84,6 +84,31 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [sectionsLoading, setSectionsLoading] = useState(true);
   const [curriculumCourseIds, setCurriculumCourseIds] = useState<Set<string>>(new Set());
 
+  const loadDefaultPlanCourses = async () => {
+    const { data: plan, error: planError } = await supabase
+      .from('degree_plans')
+      .select('id')
+      .eq('is_default', true)
+      .single();
+
+    if (planError || !plan) {
+      console.error('No default plan found:', planError);
+      return [];
+    }
+
+    const { data: semesterCourses, error: courseError } = await supabase
+      .from('degree_plan_semester_courses')
+      .select('course_id')
+      .eq('degree_plan_id', plan.id);
+
+    if (courseError) {
+      console.error('Error loading plan courses:', courseError);
+      return [];
+    }
+
+    return semesterCourses.map((c: any) => c.course_id);
+  };
+
   const sectionsSource = dbSections;
   
   const groupedSections = sectionsSource.reduce((acc, section) => {
@@ -152,6 +177,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     };
 
     const loadSections = async () => {
+      const defaultPlanCourseIds = await loadDefaultPlanCourses();
+      
       setSectionsLoading(true);
 
       const { data, error } = await supabase
