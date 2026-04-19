@@ -121,26 +121,80 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return acc;
     }, {});
 
-    const allCourses = semestersArray.flatMap((sem: any) => sem.courses);
 
-    setPlan({
-      id: String(data.id),
-      name: data.name,
-      semesters: semestersObject,
-      allCourses,
-      completedCoursesData,
-      originalCompletedIds: completedCoursesData.map((c: any) => c.id),
-      restrictions: {
-        hasOverload: !!data.has_overload,
-        repeatCourseIds: (data.degree_plan_repeat_courses || []).map((r: any) => r.course_id),
-        overrideCourses: (data.degree_plan_override_courses || []).map((r: any) => ({
-          courseId: r.course_id,
-          proofImage: '',
-          verified: true,
-        })),
-      },
-    });
-  };
+
+    const { data: planMeta, error: planMetaError } = await supabase
+      .from('degree_plans')
+      .select('degree_program_code')
+      .eq('id', Number(planId))
+      .single();
+
+    if (planMetaError || !planMeta) {
+      console.error('Error loading plan program code:', planMetaError);
+      toast.error('Failed to load saved plan courses');
+      return;
+    }
+
+    const { data: curriculumRows, error: curriculumError } = await supabase
+      .from('curriculum_section_courses')
+      .select(`
+        course_category,
+        course_id,
+        courses (
+          id,
+          name,
+          credits,
+          semester_hours,
+          required_hours,
+          must_be_alone
+        )
+      `)
+      .eq('degree_program_code', planMeta.degree_program_code);
+
+    if (curriculumError) {
+      console.error('Error loading curriculum courses:', curriculumError);
+      toast.error('Failed to load saved plan courses');
+      return;
+    }
+
+    const allCourses = (curriculumRows || [])
+      .map((row: any) => {
+        const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+        if (!courseInfo) return null;
+
+        return {
+          id: courseInfo.id,
+          code: courseInfo.id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+          name: courseInfo.name,
+          credits: courseInfo.credits,
+          semesterHours: courseInfo.semester_hours ?? undefined,
+          requiredHours: courseInfo.required_hours ?? undefined,
+          mustBeAlone: courseInfo.must_be_alone ?? false,
+          electiveCategory: row.course_category.toLowerCase().includes('elective')
+            ? row.course_category
+            : undefined,
+        };
+      })
+      .filter(Boolean);
+
+      setPlan({
+        id: String(data.id),
+        name: data.name,
+        semesters: semestersObject,
+        allCourses,
+        completedCoursesData,
+        originalCompletedIds: completedCoursesData.map((c: any) => c.id),
+        restrictions: {
+          hasOverload: !!data.has_overload,
+          repeatCourseIds: (data.degree_plan_repeat_courses || []).map((r: any) => r.course_id),
+          overrideCourses: (data.degree_plan_override_courses || []).map((r: any) => ({
+            courseId: r.course_id,
+            proofImage: '',
+            verified: true,
+          })),
+        },
+      });
+    };
 
   useEffect(() => {
     loadSavedPlan();
@@ -154,100 +208,176 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
     });
   };
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (history.length === 0) return;
 
     const previousPlan = history[0];
-    setPlan(previousPlan);
+    const previousSemesters = Object.values(previousPlan.semesters || {}) as any[];
+
+    // 1. Remove all current semester-course rows for this plan
+    const { error: deleteCourseRowsError } = await supabase
+      .from('degree_plan_semester_courses')
+      .delete()
+      .eq('degree_plan_id', Number(planId));
+
+    if (deleteCourseRowsError) {
+      console.error('Error clearing semester courses during undo:', deleteCourseRowsError);
+      toast.error('Failed to undo change');
+      return;
+    }
+
+    // 2. Remove all current semesters for this plan
+    const { error: deleteSemestersError } = await supabase
+      .from('degree_plan_semesters')
+      .delete()
+      .eq('degree_plan_id', Number(planId));
+
+    if (deleteSemestersError) {
+      console.error('Error clearing semesters during undo:', deleteSemestersError);
+      toast.error('Failed to undo change');
+      return;
+    }
+
+    // 3. Reinsert semesters from previous snapshot
+    const semesterRows = previousSemesters.map((semester: any, index: number) => ({
+      degree_plan_id: Number(planId),
+      semester_key: semester.id,
+      display_order: index,
+      completed: semester.completed,
+      is_summer: !!semester.isSummer,
+    }));
+
+    if (semesterRows.length > 0) {
+      const { error: insertSemestersError } = await supabase
+        .from('degree_plan_semesters')
+        .insert(semesterRows);
+
+      if (insertSemestersError) {
+        console.error('Error restoring semesters during undo:', insertSemestersError);
+        toast.error('Failed to undo change');
+        return;
+      }
+    }
+
+    // 4. Reinsert semester courses from previous snapshot
+    const semesterCourseRows = previousSemesters.flatMap((semester: any) =>
+      (semester.courses || [])
+        .filter((course: any) => !course.isElectiveOption && !String(course.id).startsWith('temp-placeholder-'))
+        .map((course: any, index: number) => ({
+          degree_plan_id: Number(planId),
+          semester_key: semester.id,
+          course_id: course.id,
+          display_order: index,
+          elective_category: course.electiveCategory || null,
+        }))
+    );
+
+    if (semesterCourseRows.length > 0) {
+      const { error: insertSemesterCoursesError } = await supabase
+        .from('degree_plan_semester_courses')
+        .insert(semesterCourseRows);
+
+      if (insertSemesterCoursesError) {
+        console.error('Error restoring semester courses during undo:', insertSemesterCoursesError);
+        toast.error('Failed to undo change');
+        return;
+      }
+    }
+
+    // 5. Remove the used history snapshot
     setHistory(prev => prev.slice(1));
 
-    // Update localStorage
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const planIndex = plans.findIndex((p: any) => p.id === planId);
-    if (planIndex !== -1) {
-      plans[planIndex] = previousPlan;
-      localStorage.setItem('degreePlans', JSON.stringify(plans));
-      toast.success('Change undone');
-    }
+    // 6. Reload from database so UI matches the real saved state
+    await loadSavedPlan();
+
+    toast.success('Change undone');
   };
 
-  const handleToggleSemesterComplete = (semesterId: string) => {
+  const handleToggleSemesterComplete = async (semesterId: string) => {
     if (!plan) return;
 
-    // Save current state to history
+    // Save current state to history for local undo UI
     saveToHistory(plan);
 
-    const updatedSemesters = { ...plan.semesters };
-    const wasCompleted = updatedSemesters[semesterId].completed;
-    updatedSemesters[semesterId].completed = !updatedSemesters[semesterId].completed;
+    const currentSemester = plan.semesters[semesterId];
+    if (!currentSemester) return;
 
-    const updatedPlan = { ...plan, semesters: updatedSemesters };
+    const newCompletedValue = !currentSemester.completed;
+
+    const { error } = await supabase
+      .from('degree_plan_semesters')
+      .update({ completed: newCompletedValue })
+      .eq('degree_plan_id', Number(planId))
+      .eq('semester_key', semesterId);
+
+    if (error) {
+      console.error('Error updating semester completion:', error);
+      toast.error('Failed to update semester status');
+      return;
+    }
+
+    const updatedSemesters = {
+      ...plan.semesters,
+      [semesterId]: {
+        ...currentSemester,
+        completed: newCompletedValue,
+      },
+    };
+
+    const updatedPlan = {
+      ...plan,
+      semesters: updatedSemesters,
+    };
+
     setPlan(updatedPlan);
 
-    // Update localStorage
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const planIndex = plans.findIndex((p: any) => p.id === planId);
-    if (planIndex !== -1) {
-      plans[planIndex] = updatedPlan;
-      localStorage.setItem('degreePlans', JSON.stringify(plans));
-      
-      // Show confetti only when marking as completed (not when unmarking)
-      if (!wasCompleted && updatedSemesters[semesterId].completed) {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
-      }
-      
-      toast.success('Semester marked as ' + (updatedSemesters[semesterId].completed ? 'completed' : 'incomplete'));
+    if (newCompletedValue) {
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
     }
+
+    toast.success(
+      `Semester marked as ${newCompletedValue ? 'completed' : 'incomplete'}`
+    );
   };
 
-  const handleDeleteCourse = (semesterId: string, courseId: string) => {
+  const handleDeleteCourse = async (semesterId: string, courseId: string) => {
     if (!plan) return;
 
-    // Save current state to history
     saveToHistory(plan);
 
     const updatedSemesters = { ...plan.semesters };
-    
-    // Get the full course catalog from the plan's allCourses to access prerequisites
+
     const allCoursesInPlan = plan.allCourses || [];
-    
-    // Build a map of course ID to prerequisites for quick lookup
+
     const coursePrereqMap = new Map<string, string[]>();
     allCoursesInPlan.forEach((course: any) => {
       if (course.prerequisites && course.prerequisites.length > 0) {
         coursePrereqMap.set(course.id, course.prerequisites);
       }
     });
-    
-    // Find all courses that need to be removed (the selected course + its dependents)
+
     const coursesToRemove = new Set<string>([courseId]);
-    
-    // Recursive function to find all dependent courses
+
     const findDependentCourses = (prereqId: string) => {
-      // Look through the course prerequisite map for courses that have this as a prerequisite
       coursePrereqMap.forEach((prerequisites, courseIdToCheck) => {
         if (prerequisites.includes(prereqId) && !coursesToRemove.has(courseIdToCheck)) {
           coursesToRemove.add(courseIdToCheck);
-          // Recursively find courses that depend on this course
           findDependentCourses(courseIdToCheck);
         }
       });
     };
-    
-    // Find all courses that depend on the course being deleted
+
     findDependentCourses(courseId);
-    
-    // Get course names for the toast message
+
     const removedCourseNames: string[] = [];
-    
-    // Remove all courses in the coursesToRemove set from all semesters
+
     Object.keys(updatedSemesters).forEach((semId) => {
       const semester = updatedSemesters[semId];
-      
+
       semester.courses = semester.courses.filter((c: any) => {
         if (coursesToRemove.has(c.id)) {
           removedCourseNames.push(c.code);
@@ -257,32 +387,50 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       });
     });
 
+    // 1. delete all existing semester-course rows for this plan
+    const { error: deleteError } = await supabase
+      .from('degree_plan_semester_courses')
+      .delete()
+      .eq('degree_plan_id', Number(planId));
+
+    if (deleteError) {
+      console.error('Error clearing semester courses:', deleteError);
+      toast.error('Failed to remove course from saved plan');
+      return;
+    }
+
+    // 2. rebuild remaining rows from updated semesters
+    const remainingRows = Object.values(updatedSemesters).flatMap((semester: any, semIndex: number) =>
+      semester.courses
+        .filter((course: any) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
+        .map((course: any, courseIndex: number) => ({
+          degree_plan_id: Number(planId),
+          semester_key: semester.id,
+          course_id: course.id,
+          display_order: courseIndex,
+          elective_category: course.electiveCategory || null,
+        }))
+    );
+
+    if (remainingRows.length > 0) {
+      const { error: insertError } = await supabase
+        .from('degree_plan_semester_courses')
+        .insert(remainingRows);
+
+      if (insertError) {
+        console.error('Error rebuilding semester courses:', insertError);
+        toast.error('Failed to update saved plan');
+        return;
+      }
+    }
+
     const updatedPlan = { ...plan, semesters: updatedSemesters };
     setPlan(updatedPlan);
 
-    // Update localStorage
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    const planIndex = plans.findIndex((p: any) => p.id === planId);
-    if (planIndex !== -1) {
-      plans[planIndex] = updatedPlan;
-      localStorage.setItem('degreePlans', JSON.stringify(plans));
-      
-      // Show appropriate message based on how many courses were removed with undo action
-      if (removedCourseNames.length === 1) {
-        toast.success('Course removed from plan', {
-          action: {
-            label: 'Undo',
-            onClick: handleUndo,
-          },
-        });
-      } else {
-        toast.success(`Removed ${removedCourseNames.length} courses: ${removedCourseNames.join(', ')}`, {
-          action: {
-            label: 'Undo',
-            onClick: handleUndo,
-          },
-        });
-      }
+    if (removedCourseNames.length === 1) {
+      toast.success('Course removed from plan');
+    } else {
+      toast.success(`Removed ${removedCourseNames.length} courses: ${removedCourseNames.join(', ')}`);
     }
   };
 
@@ -310,15 +458,23 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
 
   // Calculate unassigned courses
   const allCourses = plan.allCourses || [];
-  const completedCourseIds = plan.originalCompletedIds || [];
-  
-  // Get all course IDs currently assigned to semesters
-  const assignedCourseIds = semesters.flatMap(sem => sem.courses.map((c: any) => c.id));
-  
-  // Calculate unassigned courses (courses that are in allCourses but not assigned to any semester and not completed)
-  const unassignedCourses = allCourses.filter(
-    (course: any) => !assignedCourseIds.includes(course.id) && !completedCourseIds.includes(course.id)
+  const completedCourseIds = new Set(
+    (plan.completedCoursesData || []).map((c: any) => c.id)
   );
+
+  // Get all course IDs currently assigned to semesters
+  const assignedCourseIds = new Set(
+    semesters.flatMap((sem: any) => sem.courses.map((c: any) => c.id))
+  );
+
+  // Ignore electives in the warning count
+  const unassignedCourses = allCourses.filter(
+    (course: any) =>
+      !assignedCourseIds.has(course.id) &&
+      !completedCourseIds.has(course.id) &&
+      !course.electiveCategory
+  );
+
   const unassignedCount = unassignedCourses.length;
 
   return (
@@ -343,8 +499,8 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={handleUndo}
               disabled={history.length === 0}
             >
