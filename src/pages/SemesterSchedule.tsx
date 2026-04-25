@@ -1,37 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, Calendar, Download, Copy, Sparkles, ChevronDown, Trash2, Filter, ChevronLeft, ChevronRight, X, RotateCcw, Search } from 'lucide-react';
-import type { Page, User } from '../App';
+import type { User } from '../App';
 import { toast } from 'sonner';
-//import { ScrollArea } from '../ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
-import { Checkbox } from '../ui/checkbox';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { fetchSectionsWithMeetings } from "../lib/courseData";
-
-interface SectionWithMeetings {
-  crn: string;
-  course_id: string;
-  section: string;
-  instructor: string | null;
-  room: string | null;
-  credits: number;
-  meetings: {
-    crn: string;
-    day: string;
-    start_time: string;
-    end_time: string;
-  }[];
-}
-
 
 interface SemesterScheduleProps {
   user: User;
@@ -43,7 +24,7 @@ interface CourseSection {
   courseCode: string;
   courseName: string;
   section: string;
-  sectionType: 'LEC' | 'LAB';
+  sectionType: 'LEC' | 'LAB' | 'LEC_LAB';
   instructor: string;
   credits: number;
   days: string[];
@@ -51,6 +32,7 @@ interface CourseSection {
   endTime: string;
   location: string;
   electiveCategory?: string;
+  gender: 'M' | 'F';
 }
 
 interface AIScheduleOption {
@@ -64,6 +46,18 @@ const TIME_SLOTS = [
 ];
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
+
+const mapMeetingDay = (day: string) => {
+  const normalized = String(day).trim().toUpperCase();
+
+  if (normalized === 'U') return 'Sunday';
+  if (normalized === 'M') return 'Monday';
+  if (normalized === 'T') return 'Tuesday';
+  if (normalized === 'W') return 'Wednesday';
+  if (normalized === 'R') return 'Thursday';
+
+  return day;
+};
 
 export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const navigate = useNavigate();
@@ -83,30 +77,88 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [dbSections, setDbSections] = useState<CourseSection[]>([]);
   const [sectionsLoading, setSectionsLoading] = useState(true);
   const [curriculumCourseIds, setCurriculumCourseIds] = useState<Set<string>>(new Set());
+  const [currentSemester, setCurrentSemester] = useState<{ term: string; label: string; planKey: string } | null>(null);
+  const [defaultPlan, setDefaultPlan] = useState<any | null>(null);
+  const [prerequisiteMap, setPrerequisiteMap] = useState<Record<string, string[]>>({});
 
-  const loadDefaultPlanCourses = async () => {
+
+    const loadDefaultPlan = async () => {
     const { data: plan, error: planError } = await supabase
       .from('degree_plans')
-      .select('id')
+      .select('id, name, is_default')
       .eq('is_default', true)
       .single();
 
     if (planError || !plan) {
-      console.error('No default plan found:', planError);
-      return [];
+      console.error('Error loading default plan:', planError);
+      setDefaultPlan(null);
+      return;
     }
 
-    const { data: semesterCourses, error: courseError } = await supabase
+    const { data: semesters, error: semestersError } = await supabase
+      .from('degree_plan_semesters')
+      .select('semester_key, completed, is_summer, display_order')
+      .eq('degree_plan_id', plan.id)
+      .order('display_order', { ascending: true });
+
+    if (semestersError) {
+      console.error('Error loading default plan semesters:', semestersError);
+      setDefaultPlan(null);
+      return;
+    }
+
+    const { data: semesterCourses, error: coursesError } = await supabase
       .from('degree_plan_semester_courses')
+      .select('semester_key, course_id, elective_category, display_order')
+      .eq('degree_plan_id', plan.id)
+      .order('display_order', { ascending: true });
+
+    if (coursesError) {
+      console.error('Error loading default plan courses:', coursesError);
+      setDefaultPlan(null);
+      return;
+    }
+
+    const { data: completedRows, error: completedError } = await supabase
+      .from('degree_plan_completed_courses')
       .select('course_id')
       .eq('degree_plan_id', plan.id);
 
-    if (courseError) {
-      console.error('Error loading plan courses:', courseError);
-      return [];
+    if (completedError) {
+      console.error('Error loading completed courses:', completedError);
+      setDefaultPlan(null);
+      return;
     }
 
-    return semesterCourses.map((c: any) => c.course_id);
+    const completedCourseIds = (completedRows || []).map((row: any) =>
+      normalizeCourseCode(row.course_id)
+    );
+
+    const semestersMap: any = {};
+
+    (semesters || []).forEach((sem: any) => {
+      semestersMap[sem.semester_key] = {
+        id: sem.semester_key,
+        completed: sem.completed,
+        isSummer: sem.is_summer,
+        courses: [],
+      };
+    });
+
+    (semesterCourses || []).forEach((row: any) => {
+      if (!semestersMap[row.semester_key]) return;
+
+      semestersMap[row.semester_key].courses.push({
+        id: row.course_id,
+        code: row.course_id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+      });
+    });
+
+    setDefaultPlan({
+      ...plan,
+      semesters: semestersMap,
+      completedCourseIds,
+    });
   };
 
   const sectionsSource = dbSections;
@@ -121,9 +173,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   // Load saved schedules on mount
   React.useEffect(() => {
+    setCurrentSemester(getCurrentSemester());
     loadSavedSchedules();
     loadSections();
     loadCurriculumCourses();
+    loadDefaultPlan();
+    loadPrerequisites();
   }, []);
 
   const loadSavedSchedules = async () => {
@@ -177,8 +232,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     };
 
     const loadSections = async () => {
-      const defaultPlanCourseIds = await loadDefaultPlanCourses();
-      
+
       setSectionsLoading(true);
 
       const { data, error } = await supabase
@@ -191,7 +245,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
           instructor,
           room,
           credits,
-          elective_category,
+          gender,
           courses (
             name
           ),
@@ -212,7 +266,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
       const formatted: CourseSection[] = (data || []).map((row: any) => {
         const meetings = row.course_section_meetings || [];
-        const days = meetings.map((m: any) => m.day);
+        const days = meetings.map((m: any) => mapMeetingDay(m.day));
 
         const sortedMeetings = [...meetings].sort((a: any, b: any) =>
           String(a.start_time).localeCompare(String(b.start_time))
@@ -228,7 +282,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
           id: row.crn,
           crn: row.crn,
           courseCode: row.course_id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
-          courseName: row.courses?.name || '',
+          courseName: courseName,
           section: row.section,
           sectionType: row.section_type,
           instructor: row.instructor || 'TBA',
@@ -237,16 +291,27 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
           startTime: firstMeeting ? formatTime(firstMeeting.start_time) : '00:00',
           endTime: lastMeeting ? formatTime(lastMeeting.end_time) : '00:00',
           location: row.room || 'TBA',
-          electiveCategory: row.elective_category || undefined,
+          gender: row.gender,
         };
       });
+
+      const userGenderCode =
+        user.gender === 'Female' ? 'F' :
+        user.gender === 'Male' ? 'M' :
+        user.gender;
+
+      const filteredByGender = formatted.filter(
+        section => section.gender === userGenderCode
+      );
+
       if (error) {
         console.error('Error loading sections:', error);
         toast.error('Failed to load sections');
         setSectionsLoading(false);
         return;
       }
-      setDbSections(formatted);
+      
+      setDbSections(filteredByGender);
       setSectionsLoading(false);
     };  
 
@@ -273,64 +338,85 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     setCurriculumCourseIds(ids);
   };
 
-  const getDefaultDegreePlan = () => {
-    const defaultPlanId = localStorage.getItem('defaultPlanId');
-    if (!defaultPlanId) return null;
+  const loadPrerequisites = async () => {
+    const { data, error } = await supabase
+      .from('course_prerequisites')
+      .select('course_id, prerequisite_course_id');
+
+    if (error) {
+      console.error('Error loading prerequisites:', error);
+      toast.error('Failed to load prerequisites');
+      return;
+    }
+
+    const map: Record<string, string[]> = {};
+
+    (data || []).forEach((row: any) => {
+      const courseId = row.course_id.replace(/\s/g, '').toUpperCase();
+      const prereqId = row.prerequisite_course_id.replace(/\s/g, '').toUpperCase();
+
+      if (!map[courseId]) {
+        map[courseId] = [];
+      }
+
+      map[courseId].push(prereqId);
+    });
     
-    const plans = JSON.parse(localStorage.getItem('degreePlans') || '[]');
-    return plans.find((p: any) => p.id === defaultPlanId) || null;
+    setPrerequisiteMap(map);
+  };
+
+  const getDefaultDegreePlan = () => {
+    return defaultPlan;
   };
 
   // Helper function to normalize course codes for comparison
-  const normalizeCourseCode = (code: string): string => {
-    // Remove spaces and convert to uppercase for comparison
-    // e.g., "CS 101" -> "CS101", "cs101" -> "CS101"
-    return code.replace(/\s+/g, '').toUpperCase();
+  const normalizeCourseCode = (code: string) => {
+    return String(code)
+      .replace(/"/g, '')
+      .replace(/\s+/g, '')
+      .toUpperCase();
   };
 
-  const getElectiveRequirements = (): Record<string, number> => {
-    const plan = getDefaultDegreePlan();
-    if (!plan) return {};
-    
-    const requirements: Record<string, number> = {};
-    const semesters = Object.values(plan.semesters || {}) as any[];
-    
-    // Count elective placeholders in uncompleted semesters
-    for (const semester of semesters) {
-      if (semester.completed) continue;
-      
-      if (semester.courses && semester.courses.length > 0) {
-        semester.courses.forEach((course: any) => {
-          // Check both electiveCategory field and isElectiveOption flag
-          if (course.electiveCategory) {
-            const category = course.electiveCategory;
-            requirements[category] = (requirements[category] || 0) + 1;
-          } else if (course.isElectiveOption && course.code) {
-            // The code field for elective placeholders often contains the category name itself
-            const code = course.code;
-            // Try exact match first (for placeholders where code = category name)
-            if (code === 'Social Science Electives' || code === 'Computer Science Electives' || code === 'Natural Science Electives') {
-              requirements[code] = (requirements[code] || 0) + 1;
-            } else {
-              // Infer category from course code for backward compatibility
-              const codeUpper = code.toUpperCase();
-              if (codeUpper.includes('SOCIAL SCIENCE') || codeUpper.includes('FURS') || codeUpper.includes('FUTR') || 
-                  codeUpper.includes('HIST') || codeUpper.includes('ECON') || codeUpper.includes('SPAN') || 
-                  codeUpper.includes('SUST') || codeUpper.includes('SYST') || codeUpper.includes('GEGR') || 
-                  codeUpper.includes('PSYC') || codeUpper.includes('SERV') || codeUpper.includes('BSTW') || codeUpper.includes('DANT')) {
-                requirements['Social Science Electives'] = (requirements['Social Science Electives'] || 0) + 1;
-              } else if (codeUpper.includes('COMPUTER SCIENCE') || codeUpper.includes('COSC') || codeUpper.includes('ITAP')) {
-                requirements['Computer Science Electives'] = (requirements['Computer Science Electives'] || 0) + 1;
-              } else if (codeUpper.includes('NATURAL SCIENCE') || codeUpper.includes('BIOL') || codeUpper.includes('CHEM') || codeUpper.includes('GEOL')) {
-                requirements['Natural Science Electives'] = (requirements['Natural Science Electives'] || 0) + 1;
-              }
-            }
-          }
-        });
+  const getCurrentSemester = () => {
+    const now = new Date();
+
+    const month = now.getMonth() + 1; // 1–12
+    const year = now.getFullYear();
+
+    let term: 'Fall' | 'Spring' | 'Summer';
+    let academicYearStart = year;
+    let planKey = '';
+
+    if (month >= 7 && month <= 10) {
+      // July → October
+      term = 'Fall';
+      academicYearStart = year;
+      planKey = `fall-${year}`;
+    } else if (month >= 11 || month <= 2) {
+      // Nov → Feb
+      term = 'Spring';
+
+      if (month <= 2) {
+        academicYearStart = year - 1;
+        planKey = `spring-${year}`;
+      } else {
+        academicYearStart = year;
+        planKey = `spring-${year + 1}`;
       }
+    } else {
+      // March → June
+      term = 'Summer';
+      academicYearStart = year - 1;
+      planKey = `summer-${year}`;
     }
-    
-    return requirements;
+
+    const academicYearEnd = academicYearStart + 1;
+
+    return {
+      term,
+      label: `${term} ${academicYearStart}/${String(academicYearEnd).slice(2)}`,
+      planKey,
+    };
   };
 
   const getNextSemesterCourses = () => {
@@ -377,143 +463,161 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
   
 
-  // Get courses from completed semesters (already taken)
   const getCompletedCourses = () => {
     const plan = getDefaultDegreePlan();
     if (!plan) return new Set<string>();
-    
+
     const courses = new Set<string>();
+
+    // Completed courses marked during course selection
+    (plan.completedCourseIds || []).forEach((courseId: string) => {
+      courses.add(normalizeCourseCode(courseId));
+    });
+
+    // Courses inside semesters marked as completed
     const semesters = Object.values(plan.semesters || {}) as any[];
-    
+
     for (const semester of semesters) {
-      // Only include completed semesters
       if (!semester.completed) continue;
-      
+
       if (semester.courses && semester.courses.length > 0) {
         semester.courses.forEach((course: any) => {
-          courses.add(normalizeCourseCode(course.code));
+          courses.add(normalizeCourseCode(course.id || course.code));
         });
       }
     }
+
     return courses;
+  };
+
+  const getCurrentSemesterCourses = () => {
+    const plan = getDefaultDegreePlan();
+
+    if (!plan || !currentSemester) return new Set<string>();
+
+    const semester = plan.semesters?.[currentSemester.planKey];
+
+    if (!semester || !semester.courses) return new Set<string>();
+
+    return new Set(
+      semester.courses.map((course: any) =>
+        normalizeCourseCode(course.id || course.code)
+      )
+    );
+  };
+
+  const getCurrentlyTakingCourses = () => {
+    const plan = getDefaultDegreePlan();
+
+    if (!plan || !currentSemester) return new Set<string>();
+
+    const currentKey = currentSemester.planKey;
+
+    const previousSemesterKey =
+      currentKey.startsWith('summer-')
+        ? currentKey.replace('summer-', 'spring-')
+        : currentKey.startsWith('spring-')
+          ? currentKey.replace('spring-', 'fall-')
+          : currentKey.replace('fall-', 'summer-');
+
+    const semester = plan.semesters?.[previousSemesterKey];
+
+    if (!semester || !semester.courses) return new Set<string>();
+
+    return new Set(
+      semester.courses.map((course: any) =>
+        normalizeCourseCode(course.id || course.code)
+      )
+    );
+  };
+
+  const canTakeCourse = (courseCode: string) => {
+    const normalizedCode = courseCode.replace(/\s/g, '').toUpperCase();
+    const requiredPrereqs = prerequisiteMap[normalizedCode] || [];
+    if (!prerequisiteMap) return true;
+
+    if (requiredPrereqs.length === 0) return true;
+
+    const completedCourses = getCompletedCourses();
+
+    return requiredPrereqs.every(prereqId => completedCourses.has(prereqId));
   };
 
   const getFilteredSections = () => {
     let filtered: Record<string, CourseSection[]> = {};
-    
+
+    const completedCourses = getCompletedCourses();
+    const currentlyTakingCourses = getCurrentlyTakingCourses();
+
     if (courseFilter === 'all') {
-      const plan = getDefaultDegreePlan();
-      
-      // If no plan exists, show courses from the user's major template
-      if (!plan) {
-        const completedCourses = getCompletedCourses();
-
-        Object.entries(groupedSections).forEach(([courseCode, sections]) => {
-          const normalizedCode = normalizeCourseCode(courseCode);
-
-          if (curriculumCourseIds.has(normalizedCode) && !completedCourses.has(normalizedCode)) {
-            filtered[courseCode] = sections;
-          }
-        });
-      } else {
-        // If plan exists, apply smart filtering:
-        // 1. Only show courses from the user's degree plan (exclude other programs)
-        // 2. Don't show courses they've already completed (unless they're planned to retake)
-        // 3. Show courses they can register for
-        const allPlanCourses = getAllPlanCourses();
-        const completedCourses = getCompletedCourses();
-        const uncompletedCourses = getNextSemesterCourses(); // Courses in uncompleted semesters
-        
-        Object.entries(groupedSections).forEach(([courseCode, sections]) => {
-          const normalizedCode = normalizeCourseCode(courseCode);
-          
-          // Check if course exists in the degree plan
-          let isInPlan = allPlanCourses.has(normalizedCode);
-          
-          // Also check for partial matches (e.g., "ENG" in "ENGL")
-          if (!isInPlan) {
-            for (const planCourseCode of allPlanCourses) {
-              const sectionDept = normalizedCode.replace(/[0-9]/g, '');
-              const sectionNum = normalizedCode.replace(/[^0-9]/g, '');
-              const planDept = planCourseCode.replace(/[0-9]/g, '');
-              const planNum = planCourseCode.replace(/[^0-9]/g, '');
-              
-              if (sectionNum === planNum && 
-                  (sectionDept.startsWith(planDept) || planDept.startsWith(sectionDept))) {
-                isInPlan = true;
-                break;
-              }
-            }
-          }
-          if (isInPlan) {
-            // Check if it's completed
-            const isCompleted = completedCourses.has(normalizedCode);
-            // Check if it's being retaken (in uncompleted semesters)
-            const isInUncompletedSemester = uncompletedCourses.has(normalizedCode);
-            
-            // Include if: not completed yet OR being retaken
-            if (!isCompleted || isInUncompletedSemester) {
-              filtered[courseCode] = sections;
-            }
-          }
-        });
-      }
-    } else {
-      const nextSemesterCourses = getNextSemesterCourses();
-      
       Object.entries(groupedSections).forEach(([courseCode, sections]) => {
-        // Normalize both codes for comparison
-        const normalizedCode = normalizeCourseCode(courseCode);
-        
-        // Check if this course code matches any in the next semester
-        if (nextSemesterCourses.has(normalizedCode)) {
+        const normalizedCode = courseCode.replace(/\s/g, '').toUpperCase();
+
+        const isInCurriculum = curriculumCourseIds.has(normalizedCode);
+        const isCompleted = completedCourses.has(normalizedCode);
+        const isCurrentlyTaking = currentlyTakingCourses.has(normalizedCode);
+        const prerequisitesMet = canTakeCourse(courseCode);
+
+        if (
+          isInCurriculum &&
+          !isCurrentlyTaking &&
+          prerequisitesMet
+        ) {
           filtered[courseCode] = sections;
-        } else {
-          // Also check for partial matches (e.g., "ENG" in "ENGL")
-          for (const planCourseCode of nextSemesterCourses) {
-            // Extract department code and number separately
-            const sectionDept = normalizedCode.replace(/[0-9]/g, '');
-            const sectionNum = normalizedCode.replace(/[^0-9]/g, '');
-            const planDept = planCourseCode.replace(/[0-9]/g, '');
-            const planNum = planCourseCode.replace(/[^0-9]/g, '');
-            
-            // Match if numbers are the same and one department starts with the other
-            if (sectionNum === planNum && 
-                (sectionDept.startsWith(planDept) || planDept.startsWith(sectionDept))) {
-              filtered[courseCode] = sections;
-              break;
-            }
-          }
+        }
+      });
+    } else {
+      const plan = getDefaultDegreePlan();
+
+      if (!plan || !currentSemester) {
+        return {};
+      }
+
+      const semester = plan.semesters?.[currentSemester.planKey];
+
+      if (!semester || !semester.courses || semester.courses.length === 0) {
+        return {};
+      }
+
+      const planCourseCodes = new Set(
+        semester.courses.map((course: any) =>
+          normalizeCourseCode(course.id || course.code)
+        )
+      );
+
+      Object.entries(groupedSections).forEach(([courseCode, sections]) => {
+        const normalizedCode = normalizeCourseCode(courseCode);
+
+        if (planCourseCodes.has(normalizedCode)) {
+          filtered[courseCode] = sections;
         }
       });
     }
-    
-    // Apply search filter
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       const searchFiltered: Record<string, CourseSection[]> = {};
-      
+
       Object.entries(filtered).forEach(([courseCode, sections]) => {
         const courseName = sections[0]?.courseName.toLowerCase() || '';
         const code = courseCode.toLowerCase();
-        
-        // If course code or course name matches, include all sections
+
         if (code.includes(query) || courseName.includes(query)) {
           searchFiltered[courseCode] = sections;
         } else {
-          // Otherwise, only include sections where instructor matches
-          const matchingSections = sections.filter(s => 
+          const matchingSections = sections.filter(s =>
             s.instructor.toLowerCase().includes(query)
           );
+
           if (matchingSections.length > 0) {
             searchFiltered[courseCode] = matchingSections;
           }
         }
       });
-      
+
       return searchFiltered;
     }
-    
+
     return filtered;
   };
 
@@ -596,34 +700,38 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleSectionClick = (section: CourseSection) => {
-    // Find all sections with the same CRN (parts of the same course meeting at different times)
     const relatedSections = sectionsSource.filter(s => s.crn === section.crn);
     const relatedIds = relatedSections.map(s => s.id);
-    
+
     const newChosen = new Set(chosenSections);
-    
+
     if (newChosen.has(section.id)) {
-      // Unselect all related sections
       relatedIds.forEach(id => newChosen.delete(id));
       toast.info('Section unselected');
     } else {
-      // Remove any other chosen sections of the SAME TYPE (lecture/lab) for this course
       const courseSections = groupedSections[section.courseCode] || [];
-      const isLab = section.sectionType === 'LAB';
-      
+
       courseSections.forEach(s => {
-        const sectionIsLab = s.sectionType === 'LAB';
-        // Only remove if it's the same type (both labs or both lectures)
-        if (sectionIsLab === isLab) {
+        const isSameCourse = s.courseCode === section.courseCode;
+
+        if (!isSameCourse) return;
+
+        // If selected section is LEC_LAB, remove all LEC, LAB, and LEC_LAB for this course
+        if (section.sectionType === 'LEC_LAB') {
+          newChosen.delete(s.id);
+          return;
+        }
+
+        // If selected section is LEC or LAB, remove same type and LEC_LAB
+        if (s.sectionType === section.sectionType || s.sectionType === 'LEC_LAB') {
           newChosen.delete(s.id);
         }
       });
-      
-      // Add all related sections (all parts of this CRN)
+
       relatedIds.forEach(id => newChosen.add(id));
       toast.success(`Selected ${section.courseCode} - ${section.instructor}`);
     }
-    
+
     setChosenSections(newChosen);
   };
 
@@ -644,60 +752,35 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getSectionState = (section: CourseSection): 'chosen' | 'possible' | 'impossible' => {
-    // If section not added, not visible
     if (!addedSections.has(section.id)) return 'impossible';
-    
-    // If this section is chosen
+
     if (chosenSections.has(section.id)) return 'chosen';
-    
-    // Check if another section of the same course is chosen
+
     const courseSections = groupedSections[section.courseCode] || [];
-    const isLab = section.sectionType === 'LAB';
-    
-    // Only mark as impossible if another section of the SAME TYPE (lecture/lab) is chosen
-    const anotherSectionChosen = courseSections.some(s => {
+
+    const blockedBySameCourseChoice = courseSections.some(s => {
       if (s.id === section.id) return false;
       if (!chosenSections.has(s.id)) return false;
-      
-      const otherIsLab = s.sectionType === 'LAB';
-      // Conflict only if both are labs or both are lectures
-      return isLab === otherIsLab;
+
+      // If another LEC_LAB is chosen, block all other sections for this course
+      if (s.sectionType === 'LEC_LAB') return true;
+
+      // If this section is LEC_LAB, block it when any LEC or LAB is already chosen
+      if (section.sectionType === 'LEC_LAB') return true;
+
+      // Normal rule: LEC blocks other LEC, LAB blocks other LAB
+      return s.sectionType === section.sectionType;
     });
-    if (anotherSectionChosen) return 'impossible';
-    
-    // Check if this section is an elective and the quota for this category is filled
-    if (section.electiveCategory) {
-      const electiveRequirements = getElectiveRequirements();
-      const requiredCount = electiveRequirements[section.electiveCategory];
 
-      // Only enforce elective limits if this category actually exists in the plan
-      if (requiredCount && requiredCount > 0) {
-        const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
-        const chosenElectiveCourses = new Set<string>();
+    if (blockedBySameCourseChoice) return 'impossible';
 
-        chosenSectionsList.forEach(s => {
-          if (s.electiveCategory === section.electiveCategory) {
-            chosenElectiveCourses.add(s.courseCode);
-          }
-        });
-
-        if (
-          chosenElectiveCourses.size >= requiredCount &&
-          !chosenElectiveCourses.has(section.courseCode)
-        ) {
-          return 'impossible';
-        }
-      }
-    }
-    
-    // Check for conflicts with any chosen section
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
     for (const chosenSection of chosenSectionsList) {
       if (hasTimeConflict(section, chosenSection)) {
         return 'impossible';
       }
     }
-    
+
     return 'possible';
   };
 
@@ -796,9 +879,13 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     chosenByCourse.forEach((sections, courseCode) => {
       const hasLecture = sections.some(s => s.sectionType === 'LEC');
       const hasLab = sections.some(s => s.sectionType === 'LAB');
+      const hasCombined = sections.some(s => s.sectionType === 'LEC_LAB');
 
       const allCourseSections = sectionsSource.filter(s => s.courseCode === courseCode);
       const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
+
+      // LEC_LAB counts as complete by itself
+      if (hasCombined) return;
 
       if (courseHasLabs) {
         if (hasLecture && !hasLab) {
@@ -1081,7 +1168,9 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl">Semester Schedule</h1>
-            <p className="text-slate-600">Upcoming Semester</p>
+            <p className="text-slate-600">
+              {currentSemester ? currentSemester.label : 'Upcoming Semester'}
+            </p>
           </div>
           <div className="flex gap-2">
             <DropdownMenu>

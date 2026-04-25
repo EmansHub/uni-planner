@@ -5,8 +5,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from datetime import datetime
 import time
-
 
 def normalize_course_code(course_code):
     return course_code.replace(" ", "").strip()
@@ -30,6 +30,22 @@ def convert_time_format(raw_time):
 def split_days(days_text):
     return list(days_text.strip())
 
+def get_current_term_code():
+    now = datetime.now()
+    month = now.month
+    year = now.year
+
+    if 7 <= month <= 10:
+        # Fall
+        return f"{year + 1}10"
+    elif month >= 11 or month <= 2:
+        # Spring
+        if month <= 2:
+            return f"{year}20"
+        return f"{year + 1}20"
+    else:
+        # Summer
+        return f"{year}30"
 
 def scrape_courses():
     options = Options()
@@ -68,85 +84,71 @@ def scrape_courses():
         college_dropdown = Select(driver.find_element(By.ID, "CollegeList"))
         gender_dropdown = Select(driver.find_element(By.ID, "GenderList"))
 
-        semester_dropdown.select_by_value("202620")
+        term_code = get_current_term_code()
+        semester_dropdown.select_by_value(term_code)
+        print("Selected term code:", term_code)
+        print("Actual dropdown value after selection:", semester_dropdown.first_selected_option.get_attribute("value"))
+        print("Actual dropdown text after selection:", semester_dropdown.first_selected_option.text)
         college_dropdown.select_by_value("ALL")
-        gender_dropdown.select_by_value("F1")
 
-        print("Selected filters")
+        all_rows = []
 
-        search_button = wait.until(
-            EC.element_to_be_clickable((By.ID, "submitbtn"))
-        )
-        search_button.click()
-        print("Clicked search")
+        for gender_value, gender_label in [("F1", "F"), ("M1", "M")]:
+            gender_dropdown.select_by_value(gender_value)
 
-        time.sleep(3)
+            search_button = wait.until(
+                EC.element_to_be_clickable((By.ID, "submitbtn"))
+            )
+            search_button.click()
 
-        all_data = driver.execute_async_script("""
-            const callback = arguments[arguments.length - 1];
+            time.sleep(3)
 
-            function collectData() {
-                try {
-                    const table = $('.datatables-basic').DataTable();
-                    if (!table) {
-                        callback({ error: 'DataTable not found' });
-                        return;
+            result = driver.execute_async_script("""
+                const callback = arguments[arguments.length - 1];
+
+                function collectData() {
+                    try {
+                        const table = $('.datatables-basic').DataTable();
+                        const allData = [];
+                        const pageCount = table.page.info().pages;
+
+                        for (let i = 0; i < pageCount; i++) {
+                            table.page(i).draw(false);
+
+                            const rows = Array.from(table.rows({ page: 'current' }).nodes());
+
+                            rows.forEach(row => {
+                                const cells = row.querySelectorAll('td');
+                                allData.push([
+                                    cells[0]?.innerText.trim() || "",
+                                    cells[1]?.innerText.trim() || "",
+                                    cells[2]?.innerText.trim() || "",
+                                    cells[3]?.innerText.trim() || "",
+                                    cells[4]?.innerText.trim() || "",
+                                    cells[5]?.innerText.trim() || "",
+                                    cells[6]?.innerText.trim() || "",
+                                    cells[7]?.innerText.trim() || "",
+                                    cells[8]?.innerText.trim() || ""
+                                ]);
+                            });
+                        }
+
+                        callback({ rows: allData });
+                    } catch (err) {
+                        callback({ error: String(err) });
                     }
-
-                    const allData = [];
-                    const pageCount = table.page.info().pages;
-
-                    for (let i = 0; i < pageCount; i++) {
-                        table.page(i).draw(false);
-
-                        const rows = Array.from(table.rows({ page: 'current' }).nodes());
-
-                        rows.forEach(row => {
-                            const cells = row.querySelectorAll('td');
-                            allData.push([
-                                cells[0]?.innerText.trim() || "",
-                                cells[1]?.innerText.trim() || "",
-                                cells[2]?.innerText.trim() || "",
-                                cells[3]?.innerText.trim() || "",
-                                cells[4]?.innerText.trim() || "",
-                                cells[5]?.innerText.trim() || "",
-                                cells[6]?.innerText.trim() || "",
-                                cells[7]?.innerText.trim() || "",
-                                cells[8]?.innerText.trim() || ""
-                            ]);
-                        });
-                    }
-
-                    callback({
-                        pageCount: pageCount,
-                        rows: allData
-                    });
-                } catch (err) {
-                    callback({ error: String(err) });
                 }
-            }
 
-            setTimeout(collectData, 1000);
-        """)
+                setTimeout(collectData, 1000);
+            """)
 
-        if not all_data:
-            return {
-                "message": "PMU DataTable scrape failed",
-                "error": "No data returned from JavaScript",
-                "sections_data": [],
-                "meetings_data": []
-            }
+            for row in result.get("rows", []):
+                if len(row) == 9:
+                    row.append(gender_label)
+                    all_rows.append(row)
 
-        if all_data.get("error"):
-            return {
-                "message": "PMU DataTable scrape failed",
-                "error": all_data["error"],
-                "sections_data": [],
-                "meetings_data": []
-            }
-
-        raw_rows = all_data.get("rows", [])
-        total_pages = all_data.get("pageCount", 0)
+        raw_rows = all_rows
+        total_pages = 0
 
         print("Total pages found:", total_pages)
         print("Raw rows found:", len(raw_rows))
@@ -154,7 +156,7 @@ def scrape_courses():
         cleaned_rows = []
 
         for row in raw_rows:
-            if len(row) == 9:
+            if len(row) == 10:
                 raw_course_code = row[1].strip()
                 raw_days = row[4].strip()
                 raw_time = row[5].strip()
@@ -175,7 +177,8 @@ def scrape_courses():
                     "end_time": end_time,
                     "instructor": row[6].strip(),
                     "room": row[7].strip(),
-                    "status": row[8].strip()
+                    "status": row[8].strip(),
+                    "gender": row[9]
                 })
 
         # Dedupe cleaned rows by CRN
@@ -191,15 +194,27 @@ def scrape_courses():
         sections_map = {}
         for item in cleaned_rows:
             crn = item["crn"]
+
+            title_value = item["course_title"].strip().upper()
+
+            title_value = item["course_title"].strip().upper()
+
+            if "LEC/LAB" in title_value or ("LEC" in title_value and "LAB" in title_value):
+                section_type = "LEC_LAB"
+            elif "LAB" in title_value:
+                section_type = "LAB"
+            else:
+                section_type = "LEC"
+
             sections_map[crn] = {
                 "crn": item["crn"],
                 "course_id": item["course_id"],
                 "course_title": item["course_title"],
                 "section": item["section"],
-                "section_type": "LEC",
+                "section_type": section_type,
                 "instructor": item["instructor"],
                 "room": item["room"],
-                "credits": 3
+                "gender": item["gender"]
             }
 
         sections_data = list(sections_map.values())
