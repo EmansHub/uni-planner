@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { GraduationCap } from 'lucide-react';
-import type { Page } from '../App';
 import { HelpChatbot } from '../components/HelpChatbot';
 
 export function WelcomePage() {

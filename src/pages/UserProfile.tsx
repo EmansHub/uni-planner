@@ -6,23 +6,64 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { ArrowLeft, Edit2 } from 'lucide-react';
-import type { Page, User } from '../App';
+import type { User } from '../App';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface UserProfileProps {
   user: User;
-  onNavigate: (page: Page) => void;
   onUpdateUser: (user: User) => void;
 }
 
-export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps) {
+  const generateEnrollmentSemesters = () => {
+    const semesters: string[] = [];
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    let currentAcademicYearStart = year;
+
+    if (month < 7) {
+      currentAcademicYearStart = year - 1;
+    }
+    
+    // Build list from past → current only
+    for (let y = currentAcademicYearStart - 4; y <= currentAcademicYearStart; y++) {
+      semesters.push(`Fall ${y}`);
+      semesters.push(`Spring ${y + 1}`);
+    }
+
+    return semesters;
+  };
+
+export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name);
   const [major, setMajor] = useState(user.major);
   const [enrollmentSemester, setEnrollmentSemester] = useState(user.enrollmentSemester);
   const [gender, setGender] = useState(user.gender || '');
+  const [degreePrograms, setDegreePrograms] = useState<{ code: string; name: string }[]>([]);
   const navigate = useNavigate();
+
+  const loadDegreePrograms = async () => {
+    const { data, error } = await supabase
+        .from('degree_programs')
+        .select('code, name')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error loading degree programs:', error);
+        toast.error('Failed to load majors');
+        return;
+      }
+
+      setDegreePrograms(data || []);
+  };
+
+  React.useEffect(() => {
+    loadDegreePrograms();
+  }, []);
 
   const getInitials = (name: string) => {
     return name
@@ -33,9 +74,34 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
       .slice(0, 2);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name || !major || !enrollmentSemester || !gender) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+
+    if (!authUser) {
+      toast.error('You must be logged in');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        name,
+        major,
+        enrollment_semester: enrollmentSemester,
+        gender,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', authUser.id);
+
+    if (error) {
+      console.error('Profile update error:', error);
+      toast.error('Failed to update profile');
       return;
     }
 
@@ -46,15 +112,6 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
       enrollmentSemester,
       gender,
     };
-
-    // Update in localStorage
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const userIndex = users.findIndex((u: User) => u.email === user.email);
-    if (userIndex !== -1) {
-      users[userIndex] = updatedUser;
-      localStorage.setItem('users', JSON.stringify(users));
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-    }
 
     onUpdateUser(updatedUser);
     setIsEditing(false);
@@ -128,31 +185,19 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
                     <SelectTrigger id="major">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Accounting">Accounting</SelectItem>
-                      <SelectItem value="Architecture">Architecture</SelectItem>
-                      <SelectItem value="Artificial Intelligence">Artificial Intelligence</SelectItem>
-                      <SelectItem value="Business Administration">Business Administration</SelectItem>
-                      <SelectItem value="Chemical Engineering">Chemical Engineering</SelectItem>
-                      <SelectItem value="Civil Engineering">Civil Engineering</SelectItem>
-                      <SelectItem value="Computer Engineering">Computer Engineering</SelectItem>
-                      <SelectItem value="Computer Science">Computer Science</SelectItem>
-                      <SelectItem value="Cybersecurity">Cybersecurity</SelectItem>
-                      <SelectItem value="Electrical Engineering">Electrical Engineering</SelectItem>
-                      <SelectItem value="Finance">Finance</SelectItem>
-                      <SelectItem value="Graphic Design">Graphic Design</SelectItem>
-                      <SelectItem value="Human Resource Management">Human Resource Management</SelectItem>
-                      <SelectItem value="Information Technology">Information Technology</SelectItem>
-                      <SelectItem value="Interior Design">Interior Design</SelectItem>
-                      <SelectItem value="Law">Law</SelectItem>
-                      <SelectItem value="Management Information Systems">Management Information Systems</SelectItem>
-                      <SelectItem value="Marketing & Digital Media">Marketing & Digital Media</SelectItem>
-                      <SelectItem value="Mechanical Engineering">Mechanical Engineering</SelectItem>
-                      <SelectItem value="Software Engineering">Software Engineering</SelectItem>
-                    </SelectContent>
+                      <SelectContent>
+                        {degreePrograms.map((program) => (
+                          <SelectItem key={program.code} value={program.code}>
+                            {program.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                   </Select>
                 ) : (
-                  <Input value={major} disabled />
+                  <Input
+                    value={degreePrograms.find((program) => program.code === major)?.name || major}
+                    disabled
+                  />
                 )}
               </div>
 
@@ -163,17 +208,13 @@ export function UserProfile({ user, onNavigate, onUpdateUser }: UserProfileProps
                     <SelectTrigger id="enrollment">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Fall 2021">Fall 2021</SelectItem>
-                      <SelectItem value="Spring 2022">Spring 2022</SelectItem>
-                      <SelectItem value="Fall 2022">Fall 2022</SelectItem>
-                      <SelectItem value="Spring 2023">Spring 2023</SelectItem>
-                      <SelectItem value="Fall 2023">Fall 2023</SelectItem>
-                      <SelectItem value="Spring 2024">Spring 2024</SelectItem>
-                      <SelectItem value="Fall 2024">Fall 2024</SelectItem>
-                      <SelectItem value="Spring 2025">Spring 2025</SelectItem>
-                      <SelectItem value="Fall 2025">Fall 2025</SelectItem>
-                    </SelectContent>
+                      <SelectContent>
+                        {generateEnrollmentSemesters().map((semester) => (
+                          <SelectItem key={semester} value={semester}>
+                            {semester}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                   </Select>
                 ) : (
                   <Input value={enrollmentSemester} disabled />

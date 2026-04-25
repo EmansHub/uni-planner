@@ -265,7 +265,6 @@ function App() {
             currentUser ? (
               <UserProfile
                 user={currentUser}
-                onNavigate={setCurrentPage}
                 onUpdateUser={(updatedUser) => {
                   console.log('Updated user:', updatedUser);
                   setCurrentUser(updatedUser);
