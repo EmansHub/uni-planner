@@ -6,29 +6,40 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ArrowLeft } from 'lucide-react';
-import type { Page, User } from '../App';
+import type { User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
-// =============================================================================
-// COMPONENT PROPS
-// =============================================================================
+const generateEnrollmentSemesters = () => {
+  const semesters: string[] = [];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
 
+  let startYear = year;
+  if (month < 7) startYear = year - 1;
+
+  for (let y = startYear - 4; y <= startYear; y++) {
+    const nextYearShort = (y + 1).toString().slice(-2);
+    semesters.push(`Fall ${y}/${nextYearShort}`);
+    semesters.push(`Spring ${y + 1}/${nextYearShort}`);
+  }
+
+  return semesters;
+};
+
+// COMPONENT PROPS
 interface RegisterPageProps {
-  onNavigate: (page: Page) => void;  // Function to navigate to other pages
   onRegister: (user: User) => void;   // Function to call when registration succeeds
 }
 
-// =============================================================================
 // REGISTER PAGE COMPONENT
-// =============================================================================
 
-export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
-  // ---------------------------------------------------------------------------
+export function RegisterPage({ onRegister }: RegisterPageProps) {
+  
   // STATE MANAGEMENT
-  // ---------------------------------------------------------------------------
   
   const [email, setEmail] = useState('');                         // User's email
   const [name, setName] = useState('');                           // User's full name
@@ -59,15 +70,18 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
     fetchPrograms();
   }, []);
-  // ---------------------------------------------------------------------------
+
   // REGISTRATION HANDLER
-  // ---------------------------------------------------------------------------
-  
   const handleRegister = async () => {
     if (!email || !name || !major || !enrollmentSemester || !password || !confirmPassword || !gender) {
       toast.error('Please fill in all fields');
       return;
     }
+
+    //if (!email.endsWith('@pmu.edu.sa')) {
+    //  toast.error('Please use your PMU email');
+    //  return;
+    //}
 
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters');
@@ -89,7 +103,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
           data: {
             name,
             major,
-            enrollmentSemester,
+            enrollment_semester: enrollmentSemester,
             gender,
           },
         },
@@ -131,10 +145,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
     }
   };
 
-  // ---------------------------------------------------------------------------
   // RENDER
-  // ---------------------------------------------------------------------------
-
   return (
     <>
       {/* Main container with gradient background */}
@@ -170,7 +181,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 placeholder="your.email@pmu.edu.sa"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>
@@ -184,7 +195,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 placeholder="Enter your full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>
@@ -214,12 +225,11 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                   <SelectValue placeholder="Select enrollment semester" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Fall 2024/25">Fall 2024/25</SelectItem>
-                  <SelectItem value="Spring 2024/25">Spring 2024/25</SelectItem>
-                  <SelectItem value="Fall 2025/26">Fall 2025/26</SelectItem>
-                  <SelectItem value="Spring 2025/26">Spring 2025/26</SelectItem>
-                  <SelectItem value="Fall 2026/27">Fall 2026/27</SelectItem>
-                  <SelectItem value="Spring 2026/27">Spring 2026/27</SelectItem>
+                  {generateEnrollmentSemesters().map((sem) => (
+                    <SelectItem key={sem} value={sem}>
+                      {sem}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -247,7 +257,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 placeholder="Create a password (min. 6 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>
@@ -261,7 +271,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 placeholder="Re-enter your password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>

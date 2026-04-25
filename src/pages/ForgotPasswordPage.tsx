@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ArrowLeft, Mail } from 'lucide-react';
-import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
@@ -13,11 +12,10 @@ import { useNavigate } from 'react-router-dom';
 
 
 interface ForgotPasswordPageProps {
-  onNavigate: (page: Page) => void;
   onPasswordReset: (email: string) => void;
 }
 
-export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswordPageProps) {
+export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps) {
   const [email, setEmail] = useState('');
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -31,11 +29,16 @@ export function ForgotPasswordPage({ onNavigate, onPasswordReset }: ForgotPasswo
       return;
     }
 
+    //if (!email.endsWith('@pmu.edu.sa')) {
+    //  toast.error('Please use your PMU email');
+    //  return;
+    //}
+
     setLoading(true);
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'http://localhost:5173/reset-password',
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {

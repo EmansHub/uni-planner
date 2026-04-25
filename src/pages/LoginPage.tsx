@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ArrowLeft } from 'lucide-react';
-import type { Page, User } from '../App';
+import type { User } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
@@ -16,7 +16,6 @@ import { useNavigate } from 'react-router-dom';
 // =============================================================================
 
 interface LoginPageProps {
-  onNavigate: (page: Page) => void;  // Function to navigate to other pages
   onLogin: (user: User) => void;     // Function to call when login succeeds
 }
 
@@ -24,7 +23,7 @@ interface LoginPageProps {
 // LOGIN PAGE COMPONENT
 // =============================================================================
 
-export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
+export function LoginPage({ onLogin }: LoginPageProps) {
   // ---------------------------------------------------------------------------
   // STATE MANAGEMENT
   // ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
         email: user.email ?? email,
         name: user.user_metadata?.name ?? 'User',
         major: user.user_metadata?.major ?? '',
-        enrollmentSemester: user.user_metadata?.enrollmentSemester ?? '',
+        enrollmentSemester: user.user_metadata?.enrollment_semester ?? '',
         password,
         gender: user.user_metadata?.gender ?? '',
       });
@@ -131,7 +130,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
                 placeholder="your.email@pmu.edu.sa"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>
@@ -145,7 +144,7 @@ export function LoginPage({ onNavigate, onLogin }: LoginPageProps) {
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 disabled={loading}
               />
             </div>

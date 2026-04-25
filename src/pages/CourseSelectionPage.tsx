@@ -5,7 +5,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, Home, Upload } from 'lucide-react';
 import type { User } from '../App';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import { Collapsible, CollapsibleContent } from '../ui/collapsible';
 import { Separator } from '../ui/separator';
 import { toast } from 'sonner';
 import { TranscriptUpload } from '../components/TranscriptUpload';
@@ -486,7 +486,6 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
             <div className="h-[500px] pr-4 overflow-y-auto">
               <div className="space-y-4">
                 {courseSections.map((section, sectionIndex) => {
-                  const sectionCourseIds = section.courses.map(c => c.id);
                   const sectionCompleted = section.courses.filter(c => completedCourses.has(c.id)).length;
                   const sectionCurrent = section.courses.filter(c => currentCourses.has(c.id)).length;
                   const sectionTotal = section.courses.length;

@@ -5,19 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { CheckCircle } from 'lucide-react';
-import type { Page } from '../App';
 import { toast } from 'sonner';
 import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
-
 interface ResetPasswordConfirmProps {
   email: string;
-  onNavigate: (page: Page) => void;
 }
 
-export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirmProps) {
+export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [chatbotOpen, setChatbotOpen] = useState(false);
@@ -45,7 +42,13 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
 
     try {
 
-      // PLACEHOLDER: Simulate API call for testing
+      const { data: userData } = await supabase.auth.getUser();
+
+      if (!userData.user) {
+        toast.error('Session expired. Please request reset again.');
+        return;
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
       });
@@ -56,8 +59,7 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
       }
 
       toast.success('Password updated successfully!');
-      onNavigate('login');
-      navigate('/');
+      navigate('/login');
       
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
@@ -116,10 +118,7 @@ export function ResetPasswordConfirm({ email, onNavigate }: ResetPasswordConfirm
             <div className="text-center text-sm text-gray-600">
               <button
                 type="button"
-                onClick={() => {
-                  onNavigate('login');
-                  navigate('/');
-                }}
+                onClick={() => navigate('/login')}
                 className="text-blue-600 hover:underline"
               >
                 Back to Login

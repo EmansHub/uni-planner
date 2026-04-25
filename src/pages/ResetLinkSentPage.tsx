@@ -1,16 +1,14 @@
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { CheckCircle } from 'lucide-react';
-import type { Page } from '../App';
 import { useNavigate } from 'react-router-dom';
 
 
 interface ResetLinkSentPageProps {
   email: string;
-  onNavigate: (page: Page) => void;
 }
 
-export function ResetLinkSentPage({ email, onNavigate }: ResetLinkSentPageProps) {
+export function ResetLinkSentPage({ email }: ResetLinkSentPageProps) {
   const navigate = useNavigate();
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">

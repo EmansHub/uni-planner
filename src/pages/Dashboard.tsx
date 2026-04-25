@@ -3,16 +3,16 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Calendar, BookOpen, User, LogOut } from 'lucide-react';
-import type { Page, User as UserType } from '../App';
+import type { User as UserType } from '../App';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
-  onNavigate: (page: Page) => void;
   user: UserType;
   onLogout: () => void;
 }
 
-export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
+export function Dashboard({ user, onLogout }: DashboardProps) {
   const navigate = useNavigate();
   const getInitials = (name: string) => {
     return name
@@ -29,7 +29,7 @@ export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl mb-2">Welcome back, {user.name.split(' ')[0]}!</h1>
+            <h1 className="text-3xl mb-2">Welcome back, {user.name ? user.name.split(' ')[0] : 'User'}!</h1>
             <p className="text-slate-600">Manage your degree plan and semester schedules</p>
           </div>
           <div className="flex items-center gap-4">
@@ -45,12 +45,16 @@ export function Dashboard({ onNavigate, user, onLogout }: DashboardProps) {
                 </AvatarFallback>
               </Avatar>
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onLogout}
-              title="Logout"
-            >
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  onLogout();
+                  navigate('/login');
+                }}
+                title="Logout"
+              >
               <LogOut className="w-4 h-4" />
             </Button>
           </div>

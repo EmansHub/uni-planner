@@ -4,16 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ArrowLeft } from 'lucide-react';
-import type { User } from '../App';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 interface EditPasswordPageProps {
-  user: User;
 }
 
-export function EditPasswordPage({ user }: EditPasswordPageProps) {
+export function EditPasswordPage({}: EditPasswordPageProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');

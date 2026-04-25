@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { ArrowLeft, Plus, FolderOpen, Trash2, Star } from 'lucide-react';
-import type { Page, DegreePlan } from '../App';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase';
 
+type DegreePlan = any;
+
 interface PlanSelectionProps {
   onSelectPlan: (planId: string | null) => void;
 }
-[]
+
 export function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
   const [savedPlans, setSavedPlans] = useState<DegreePlan[]>([]);
   const [planToDelete, setPlanToDelete] = useState<string | null>(null);
@@ -58,13 +59,6 @@ useEffect(() => {
   };
 
   const handleStartNewPlan = () => {
-    // Clear all course selection state when starting a new plan
-    sessionStorage.removeItem('completedCourses');
-    sessionStorage.removeItem('currentCourses');
-    sessionStorage.removeItem('completedCoursesData');
-    sessionStorage.removeItem('allCourses');
-    sessionStorage.removeItem('editingPlanId');
-    
     onSelectPlan(null);
     navigate('/course-selection');
   };
@@ -75,13 +69,70 @@ useEffect(() => {
   };
 
   const handleDeletePlan = async (planId: string) => {
-    const { error } = await supabase
+    const numericPlanId = Number(planId);
+
+    const { error: completedError } = await supabase
+      .from('degree_plan_completed_courses')
+      .delete()
+      .eq('degree_plan_id', numericPlanId);
+
+    if (completedError) {
+      console.error('Error deleting completed courses:', completedError);
+      toast.error('Failed to delete plan data');
+      return;
+    }
+
+    const { error: overrideError } = await supabase
+      .from('degree_plan_override_courses')
+      .delete()
+      .eq('degree_plan_id', numericPlanId);
+
+    if (overrideError) {
+      console.error('Error deleting override courses:', overrideError);
+      toast.error('Failed to delete plan data');
+      return;
+    }
+
+    const { error: repeatError } = await supabase
+      .from('degree_plan_repeat_courses')
+      .delete()
+      .eq('degree_plan_id', numericPlanId);
+
+    if (repeatError) {
+      console.error('Error deleting repeat courses:', repeatError);
+      toast.error('Failed to delete plan data');
+      return;
+    }
+
+    const { error: semesterCoursesError } = await supabase
+      .from('degree_plan_semester_courses')
+      .delete()
+      .eq('degree_plan_id', numericPlanId);
+
+    if (semesterCoursesError) {
+      console.error('Error deleting semester courses:', semesterCoursesError);
+      toast.error('Failed to delete plan data');
+      return;
+    }
+
+    const { error: semestersError } = await supabase
+      .from('degree_plan_semesters')
+      .delete()
+      .eq('degree_plan_id', numericPlanId);
+
+    if (semestersError) {
+      console.error('Error deleting semesters:', semestersError);
+      toast.error('Failed to delete plan data');
+      return;
+    }
+
+    const { error: planError } = await supabase
       .from('degree_plans')
       .delete()
-      .eq('id', Number(planId));
+      .eq('id', numericPlanId);
 
-    if (error) {
-      console.error('Error deleting plan:', error);
+    if (planError) {
+      console.error('Error deleting plan:', planError);
       toast.error('Failed to delete plan');
       return;
     }
