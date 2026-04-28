@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -81,6 +81,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [defaultPlan, setDefaultPlan] = useState<any | null>(null);
   const [prerequisiteMap, setPrerequisiteMap] = useState<Record<string, string[]>>({});
 
+//load synced data
+const [sections, setSections] = useState<SectionWithMeetings[]>([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
 
     const loadDefaultPlan = async () => {
     const { data: plan, error: planError } = await supabase
