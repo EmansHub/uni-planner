@@ -994,8 +994,74 @@ const [error, setError] = useState("");
     toast.success('Schedule reset! Start building a new schedule.');
   };
 
-  const handleGenerateAISchedule = () => {
+  const handleGenerateAISchedule = async () => {
     setAiGenerating(true);
+
+  const response = await fetch("http://127.0.0.1:5000/generate-schedule", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    course_ids: Array.from(getAddedCourses()).map((code) =>
+    normalizeCourseCode(code)
+  ),
+    preferences: aiPrompt,
+  }),
+});
+
+const data = await response.json();
+
+console.log("Backend schedule result:", data);
+
+if (!data.options || data.options.length === 0) {
+  setAiScheduleOptions([]);
+  setAiGenerating(false);
+
+  data.explanations.forEach((reason: string) => {
+  toast.error(reason, {
+    duration: 10000,
+    style: {
+      whiteSpace: "normal",
+      wordBreak: "break-word",
+      maxWidth: "500px",
+      lineHeight: "1.4",
+    },
+  });
+});
+
+  return;
+}
+
+const backendOptions: AIScheduleOption[] = data.options.map((option: any, index: number) => {
+  const optionSections = option.sections
+    .map((backendSection: any) => {
+      const crn = backendSection.crn;
+      return sectionsSource.find((section) => section.crn === crn);
+    })
+    .filter(Boolean) as CourseSection[];
+
+  // 🔥 NEW: show skipped courses
+  if (option.skipped_courses && option.skipped_courses.length > 0) {
+    toast.warning(
+  <div className="whitespace-normal break-words max-w-md leading-snug">
+    Option {index + 1}: Removed {option.skipped_courses.join(", ")} due to time conflicts.
+  </div>,
+  { duration: 6000 }
+);
+  }
+
+  return {
+    id: `backend-option-${index}`,
+    sections: optionSections,
+  };
+});
+
+setAiScheduleOptions(backendOptions);
+setSelectedAIOption(0);
+setAiGenerating(false);
+toast.success(`Generated ${backendOptions.length} schedule option(s)!`);
+return;
     
     // If no sections added, automatically add sections from degree plan or all courses
     let sectionsToUse = new Set(addedSections);

@@ -16,6 +16,7 @@ import { PlanSelection } from './pages/PlanSelection';
 import { CourseSelectionPage } from './pages/CourseSelectionPage';
 import { SavedPlanView } from './pages/SavedPlanView';
 import { DragDropPlanning } from './pages/DragDropPlanning';
+import { HelpChatbot } from './components/HelpChatbot';
 
 export type Page =
   | 'welcome'
@@ -45,6 +46,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [resetEmail, setResetEmail] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   const loadUserProfile = async (authUser: {
     id: string;
@@ -418,6 +420,11 @@ function App() {
           }
         />
       </Routes>
+      
+      <HelpChatbot
+        isOpen={isChatbotOpen}
+        onToggle={() => setIsChatbotOpen(prev => !prev)}
+      />
     </>
   );
 }

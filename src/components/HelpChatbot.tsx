@@ -62,42 +62,22 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
     return 'I\'m here to help! You can ask me about degree planning, semester schedules, password resets, profile editing, or any other feature of Uni Planner.';
   };
 
-  const handleSendMessage = () => {
-    if (!inputMessage.trim()) return;
+  //const handleSendMessage = () => {
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputMessage,
-      sender: 'user',
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-
-    const handleSendMessage = async () => {
+  const handleSendMessage = async () => {
   if (!inputMessage.trim()) return;
+
+  const currentMessage = inputMessage;
 
   const userMessage: Message = {
     id: Date.now().toString(),
-    text: inputMessage,
+    text: currentMessage,
     sender: 'user',
     timestamp: new Date(),
   };
 
   setMessages(prev => [...prev, userMessage]);
-
-  const currentMessage = inputMessage; // store before clearing
   setInputMessage('');
-
-  // 🔹 show temporary "Typing..." message
-  const typingMessage: Message = {
-    id: 'typing',
-    text: 'Typing...',
-    sender: 'bot',
-    timestamp: new Date(),
-  };
-
-  setMessages(prev => [...prev, typingMessage]);
 
   try {
     const response = await fetch('http://127.0.0.1:5000/chatbot', {
@@ -105,27 +85,23 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message: currentMessage }),
+      body: JSON.stringify({
+        message: currentMessage,
+      }),
     });
 
     const data = await response.json();
 
-    // remove "Typing..."
-    setMessages(prev => prev.filter(msg => msg.id !== 'typing'));
-
-    const botResponse: Message = {
+    const botMessage: Message = {
       id: (Date.now() + 1).toString(),
-      text: data.reply,
+      text: data.reply || 'Sorry, I could not get a response.',
       sender: 'bot',
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, botResponse]);
-
+    setMessages(prev => [...prev, botMessage]);
   } catch (error) {
     console.error(error);
-
-    setMessages(prev => prev.filter(msg => msg.id !== 'typing'));
 
     const errorMessage: Message = {
       id: (Date.now() + 2).toString(),
@@ -138,13 +114,11 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
   }
 };
 
-    setInputMessage('');
-  };
 
   if (!isOpen) {
     return (
       <Button
-        className="fixed bottom-6 right-6 rounded-full w-14 h-14 shadow-lg"
+        className="fixed bottom-6 right-6 z-[9999] rounded-full w-14 h-14 shadow-lg"
         size="icon"
         onClick={onToggle}
       >
@@ -154,7 +128,7 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
   }
 
   return (
-    <Card className="fixed bottom-6 right-6 w-96 h-[500px] shadow-2xl flex flex-col">
+    <Card className="fixed bottom-6 right-6 z-[9999] w-96 h-[500px] shadow-2xl flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="flex items-center gap-2">
           <Headphones className="w-5 h-5" />
@@ -179,7 +153,7 @@ export function HelpChatbot({ isOpen, onToggle }: HelpChatbotProps) {
                       : 'bg-slate-100 text-slate-900'
                   }`}
                 >
-                  <p className="text-sm">{message.text}</p>
+                  <p className="text-sm whitespace-pre-line">{message.text}</p>
                 </div>
               </div>
             ))}
