@@ -5,7 +5,6 @@ import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { ArrowLeft, Edit2, CheckCircle2, Trash2, AlertTriangle, Undo } from 'lucide-react';
-import type { Page } from '../App';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -21,6 +20,16 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const [plan, setPlan] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const maxHistorySize = 10;
+
+  const formatSemesterName = (semesterId: string) => {
+    const [type, year] = semesterId.split('-');
+
+    if (!type || !year) return semesterId;
+
+    const nextYear = String(parseInt(year) + 1).slice(-2);
+
+    return `${type.charAt(0).toUpperCase() + type.slice(1)} ${year}/${nextYear}`;
+  };
 
   const loadSavedPlan = async () => {
     const { data, error } = await supabase
@@ -81,7 +90,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       .sort((a: any, b: any) => a.display_order - b.display_order)
       .map((sem: any) => ({
         id: sem.semester_key,
-        name: sem.semester_key,
+        name: formatSemesterName(sem.semester_key),
         completed: sem.completed,
         isSummer: sem.is_summer,
         courses: (sem.degree_plan_semester_courses || [])

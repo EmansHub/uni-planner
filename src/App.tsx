@@ -155,7 +155,6 @@ function App() {
           path="/login"
           element={
             <LoginPage
-              onNavigate={setCurrentPage}
               onLogin={async (user) => {
                 console.log('Logged in user:', user);
 
@@ -178,7 +177,6 @@ function App() {
           path="/register"
           element={
             <RegisterPage
-              onNavigate={setCurrentPage}
               onRegister={async (user) => {
                 console.log('Registered user:', user);
 
@@ -199,7 +197,6 @@ function App() {
           path="/forgot-password"
           element={
             <ForgotPasswordPage
-              onNavigate={setCurrentPage}
               onPasswordReset={(email) => {
                 console.log('Password reset requested for:', email);
                 setResetEmail(email);
@@ -214,7 +211,6 @@ function App() {
           element={
             <ResetLinkSentPage
               email={resetEmail}
-              onNavigate={setCurrentPage}
             />
           }
         />
@@ -224,7 +220,6 @@ function App() {
           element={
             <ResetPasswordConfirm
               email={resetEmail}
-              onNavigate={setCurrentPage}
             />
           }
         />
@@ -234,7 +229,6 @@ function App() {
           element={
             currentUser ? (
               <Dashboard
-                onNavigate={setCurrentPage}
                 user={currentUser}
                 onLogout={async () => {
                   const { error } = await supabase.auth.signOut();
@@ -250,7 +244,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
@@ -274,7 +267,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
@@ -290,11 +282,9 @@ function App() {
           element={
             currentUser ? (
               <EditPasswordPage
-                user={currentUser}
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
@@ -313,7 +303,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={async (user) => {
                   console.log('Logged in user:', user);
 
@@ -341,7 +330,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
@@ -363,7 +351,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
@@ -400,7 +387,6 @@ function App() {
               />
             ) : (
               <LoginPage
-                onNavigate={setCurrentPage}
                 onLogin={(user) => {
                   console.log('Logged in user:', user);
                   setCurrentUser(user);
