@@ -81,11 +81,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [defaultPlan, setDefaultPlan] = useState<any | null>(null);
   const [prerequisiteMap, setPrerequisiteMap] = useState<Record<string, string[]>>({});
 
-//load synced data
-const [sections, setSections] = useState<SectionWithMeetings[]>([]);
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState("");
-
     const loadDefaultPlan = async () => {
     const { data: plan, error: planError } = await supabase
       .from('degree_plans')
@@ -307,14 +302,6 @@ const [error, setError] = useState("");
       const filteredByGender = formatted.filter(
         section => section.gender === userGenderCode
       );
-
-      if (error) {
-        console.error('Error loading sections:', error);
-        toast.error('Failed to load sections');
-        setSectionsLoading(false);
-        return;
-      }
-      
       setDbSections(filteredByGender);
       setSectionsLoading(false);
     };  
@@ -564,6 +551,7 @@ const [error, setError] = useState("");
 
         if (
           isInCurriculum &&
+          !isCompleted && 
           !isCurrentlyTaking &&
           prerequisitesMet
         ) {

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ArrowLeft, GripVertical, Settings, Sparkles, Save, ChevronLeft, ChevronRight, Plus, X, CheckCircle2, Home, Info } from 'lucide-react';
 import type { User } from '../App';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 interface DragDropPlanningProps {
@@ -58,6 +58,7 @@ interface Course {
 
 export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanningProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [coursesToTake, setCoursesToTake] = useState<Course[]>([]);
   const [semesters, setSemesters] = useState<Semester[]>([]);
@@ -336,21 +337,26 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
       await loadOfferingRules();
       await loadTotalRequiredCredits();
-
-      const editingPlanId = sessionStorage.getItem('editingPlanId');
-
-      if (editingPlanId && planId === editingPlanId) {
-        await loadPlanFromSupabase(editingPlanId);
-        sessionStorage.removeItem('editingPlanId');
+      
+      // If editing existing plan → load from DB
+      if (planId) {
+        await loadPlanFromSupabase(planId);
         return;
       }
 
-      const completedCourseIds = JSON.parse(sessionStorage.getItem('completedCourses') || '[]');
-      const currentCourseIds = JSON.parse(sessionStorage.getItem('currentCourses') || '[]');
-      const allCourses = JSON.parse(sessionStorage.getItem('allCourses') || '[]');
-      const completedCoursesData = JSON.parse(sessionStorage.getItem('completedCoursesData') || '[]');
-      const allElectiveOptions = JSON.parse(sessionStorage.getItem('allElectiveOptions') || '[]');
+      const state = location.state as any;
 
+      if (!state && !planId) {
+        toast.error('Please start from course selection first.');
+        navigate('/course-selection');
+        return;
+      }
+
+      const completedCourseIds = state?.completedCourseIds || [];
+      const currentCourseIds = state?.currentCourseIds || [];
+      const allCourses = state?.allCourses || [];
+      const completedCoursesData = state?.completedCoursesData || [];
+      const allElectiveOptions = state?.allElectiveOptions || [];
       setCompletedCourses(completedCoursesData);
       setAvailableElectives(allElectiveOptions);
 
@@ -403,13 +409,11 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     // Only count regular courses (not prep courses) toward degree credits
     // Exclude repeat courses since the student already has credit for them
     let totalPlanned = 0;
-    let skippedRepeatCredits = 0;
     semesters.forEach((semester) => {
       semester.courses.forEach((course) => {
         if (course.isPrepCourse) return;
         // Skip repeat courses - student already has these credits
         if (restrictions.repeatCourseIds.includes(course.id)) {
-          skippedRepeatCredits += course.credits;
           return;
         }
         totalPlanned += course.credits;
@@ -536,37 +540,35 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     const day = now.getDate();
     const year = now.getFullYear();
 
-    let currentType: 'fall' | 'spring' | 'summer';
-    let currentYear: number;
+    let startType: 'fall' | 'spring';
+    let startYear: number;
 
-    if (month === 1 || month === 2 || month === 3 || month === 4 || month === 5) {
-      currentType = 'spring';
-      currentYear = year;
-    } else if (month === 6 || month === 7 || (month === 8 && day < 15)) {
-      currentType = 'summer';
-      currentYear = year;
+    if (month >= 1 && month < 8) {
+      startType = 'spring';
+      startYear = year;
+    } else if (month === 8 && day < 15) {
+      startType = 'spring';
+      startYear = year;
     } else {
-      currentType = 'fall';
-      currentYear = year;
+      startType = 'fall';
+      startYear = year;
     }
 
     const generated: Semester[] = [];
 
-    let type = currentType;
-    let semesterYear = currentYear;
+    let type = startType;
+    let semesterYear = startYear;
 
-    while (generated.filter(s => !s.isSummer).length < 8) {
+    while (generated.length < 8) {
       generated.push({
         id: `${type}-${semesterYear}`,
         name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${semesterYear}`,
         courses: [],
         completed: false,
-        isSummer: type === 'summer',
+        isSummer: false,
       });
 
       if (type === 'spring') {
-        type = 'summer';
-      } else if (type === 'summer') {
         type = 'fall';
       } else {
         type = 'spring';
@@ -577,50 +579,59 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     return generated;
   };
 
-  const addSemester = (semesterType: 'fall' | 'spring' | 'summer') => {
-    if (semesterType === 'summer') {
-      // Find all spring semesters and check which don't have summer after them
-      const springSemesters = semesters.filter(s => s.id.includes('spring'));
-
-      if (springSemesters.length === 0) {
-        toast.error('No spring semester found. Add a spring semester first.');
-        return;
-      }
-
-      // Find a spring that doesn't have a summer after it
-      let targetSpring = null;
-      for (const spring of springSemesters) {
-        const year = parseInt(spring.id.split('-')[1]);
+  const getAvailableSummerSemesters = () => {
+    return semesters
+      .filter((semester) => semester.id.includes('spring'))
+      .map((springSemester) => {
+        const year = parseInt(springSemester.id.split('-')[1]);
         const summerId = `summer-${year}`;
-        if (!semesters.find(s => s.id === summerId)) {
-          targetSpring = spring;
-          break;
-        }
-      }
 
-      if (!targetSpring) {
-        toast.error('All spring semesters already have summer semesters');
+        return {
+          id: summerId,
+          label: formatSemesterName(summerId),
+          exists: semesters.some((semester) => semester.id === summerId),
+        };
+      })
+      .filter((summer) => !summer.exists);
+  };
+
+  const addSemester = (semesterType: 'fall' | 'spring' | 'summer', selectedSummerId?: string) => {
+    if (semesterType === 'summer') {
+      if (!selectedSummerId) {
+        toast.error('Please select which summer semester to add.');
         return;
       }
 
-      const year = parseInt(targetSpring.id.split('-')[1]);
-      const summerId = `summer-${year}`;
+      if (semesters.some(s => s.id === selectedSummerId)) {
+        toast.error(`${formatSemesterName(selectedSummerId)} already exists`);
+        return;
+      }
+
+      const year = parseInt(selectedSummerId.split('-')[1]);
 
       const newSemester: Semester = {
-        id: summerId,
+        id: selectedSummerId,
         name: `Summer ${year}`,
         courses: [],
         completed: false,
         isSummer: true,
       };
 
-      // Insert after the spring semester
-      const springIndex = semesters.findIndex(s => s.id === targetSpring.id);
+      const springId = `spring-${year}`;
+      const springIndex = semesters.findIndex(s => s.id === springId);
+
+      if (springIndex === -1) {
+        toast.error('Cannot add summer without its spring semester.');
+        return;
+      }
+
       const newSemesters = [...semesters];
       newSemesters.splice(springIndex + 1, 0, newSemester);
+
       setSemesters(newSemesters);
-      toast.success(`Added ${formatSemesterName(summerId)}`);
-    } else {
+      toast.success(`Added ${formatSemesterName(selectedSummerId)}`);
+    }
+    else {
       // Sort semesters chronologically to find the last one
       const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
       const lastSemester = sortedSemesters[sortedSemesters.length - 1];
@@ -1513,9 +1524,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const handleBack = () => {
-    const returnTo = sessionStorage.getItem('returnTo');
-    if (returnTo === 'saved-plan-view' && planId) {
-      sessionStorage.removeItem('returnTo');
+    if (planId) {
       navigate('/saved-plan-view');
     } else {
       navigate('/course-selection');
@@ -1567,9 +1576,20 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                 <DropdownMenuItem onClick={() => addSemester('spring')}>
                   Spring Semester
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => addSemester('summer')}>
-                  Summer Semester
-                </DropdownMenuItem>
+                {getAvailableSummerSemesters().length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    No summer available
+                  </DropdownMenuItem>
+                ) : (
+                  getAvailableSummerSemesters().map((summer) => (
+                    <DropdownMenuItem
+                      key={summer.id}
+                      onClick={() => addSemester('summer', summer.id)}
+                    >
+                      {summer.label}
+                    </DropdownMenuItem>
+                  ))
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -2032,7 +2052,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                 const totalCredits = getTotalCredits(semester);
                 const semesterHours = getSemesterHours(semester);
                 // Only first incomplete semester gets overload permission if enabled
-                const isNextSemester = index === 0; // Assuming first semester is the next one
+                const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
+                const isNextSemester = sortedSemesters[0]?.id === semester.id;
                 const maxCredits = getMaxCredits(semester, isNextSemester);
                 const isOverloaded = semesterHours > maxCredits;
 

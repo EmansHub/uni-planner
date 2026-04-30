@@ -23,6 +23,7 @@ interface CourseSection {
   isElective?: boolean;
   electiveNote?: string;
   maxElectives?: number;
+  displayOrder?: number;
 }
 
 interface Course {
@@ -55,7 +56,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     const { data: sectionMetaRows, error: sectionMetaError } = await supabase
     .from('curriculum_sections')
-    .select('degree_program_code, course_category, required_credits')
+    .select('degree_program_code, course_category, required_credits, display_order')
     .eq('degree_program_code', user.major);
 
     if (sectionMetaError) {
@@ -65,11 +66,12 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     return;
     }
 
-    const sectionMetaMap = new Map<string, { requiredCredits: number }>();
+    const sectionMetaMap = new Map<string, { requiredCredits: number; displayOrder: number }>();
 
     (sectionMetaRows || []).forEach((row: any) => {
     sectionMetaMap.set(row.course_category, {
       requiredCredits: row.required_credits,
+      displayOrder: row.display_order ?? 99,
     });
     });
 
@@ -163,35 +165,17 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
             isElective,
             electiveNote,
             maxElectives,
+            displayOrder: meta?.displayOrder ?? 99,
           };
         }
       );
-    
-    const sectionOrder = [
-      'Preparation Program',
-      'Core Curriculum',
-      'Degree Specific Core',
-      'Social Science Electives',
-      'Natural Science Electives',
-      'College Core',
-      'Computer Engineering & Science Core',
-      'Major Core',
-      'Major in Computer Science',
-      'Major in Software Engineering',
-      'Major Electives',
-      'Computer Science Electives',
-      'Software Engineering Electives (3 credits)',
-      'Software Engineering Electives (4 credits)',
-    ];
 
     builtSections.sort((a, b) => {
-      const aIndex = sectionOrder.indexOf(a.title);
-      const bIndex = sectionOrder.indexOf(b.title);
+      const orderA = a.displayOrder ?? 99;
+      const orderB = b.displayOrder ?? 99;
 
-      if (aIndex === -1 && bIndex === -1) return a.title.localeCompare(b.title);
-      if (aIndex === -1) return 1;
-      if (bIndex === -1) return -1;
-      return aIndex - bIndex;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.title.localeCompare(b.title);
     });
     
     setCourseSections(builtSections);
@@ -200,19 +184,9 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     );
     setLoadingCourses(false);
   };
-  // Load saved selections from sessionStorage
+
   useEffect(() => {
     loadCourseSections();
-    
-    const savedCompletedIds = JSON.parse(sessionStorage.getItem('completedCourses') || '[]');
-    const savedCurrentIds = JSON.parse(sessionStorage.getItem('currentCourses') || '[]');
-
-    if (savedCompletedIds.length > 0) {
-      setCompletedCourses(new Set(savedCompletedIds));
-    }
-    if (savedCurrentIds.length > 0) {
-      setCurrentCourses(new Set(savedCurrentIds));
-    }
   }, []);
 
   const toggleCompleted = (courseId: string) => {
@@ -407,17 +381,18 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         });
       }
     });
-    
-    // Store the selections
-    sessionStorage.setItem('completedCourses', JSON.stringify(completedIds));
-    sessionStorage.setItem('currentCourses', JSON.stringify(Array.from(currentCourses)));
-    sessionStorage.setItem('allCourses', JSON.stringify(coursesToShow));
-    sessionStorage.setItem('completedCoursesData', JSON.stringify(completedCoursesData));
-    sessionStorage.setItem('allElectiveOptions', JSON.stringify(allElectiveOptions));
-    // Store original completed IDs so we can preserve them when saving the plan
-    sessionStorage.setItem('originalCompletedIds', JSON.stringify(completedIds));
     onContinue(null);
-    navigate('/drag-drop-planning');
+
+    navigate('/drag-drop-planning', {
+      state: {
+        completedCourseIds: completedIds,
+        currentCourseIds: Array.from(currentCourses),
+        allCourses: coursesToShow,
+        completedCoursesData,
+        allElectiveOptions,
+        originalCompletedIds: completedIds,
+      },
+    });
   };
 
   const totalCredits = courseSections.flatMap(s => s.courses).reduce((sum, c) => sum + c.credits, 0);
