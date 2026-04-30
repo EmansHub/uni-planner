@@ -38,6 +38,7 @@ interface CourseSection {
 interface AIScheduleOption {
   id: string;
   sections: CourseSection[];
+  skipped_courses?: string[];
 }
 
 const TIME_SLOTS = [
@@ -1041,7 +1042,7 @@ const backendOptions: AIScheduleOption[] = data.options.map((option: any, index:
     })
     .filter(Boolean) as CourseSection[];
 
-  // 🔥 NEW: show skipped courses
+  //show skipped courses
   if (option.skipped_courses && option.skipped_courses.length > 0) {
     toast.warning(
   <div className="whitespace-normal break-words max-w-md leading-snug">
@@ -1054,6 +1055,7 @@ const backendOptions: AIScheduleOption[] = data.options.map((option: any, index:
   return {
     id: `backend-option-${index}`,
     sections: optionSections,
+    skipped_courses: option.skipped_courses || [],
   };
 });
 
@@ -1402,6 +1404,12 @@ return;
                                     </div>
                                   );
                                 })}
+                                {aiScheduleOptions[selectedAIOption]?.skipped_courses &&
+                                aiScheduleOptions[selectedAIOption].skipped_courses.length > 0 && (
+                                <div className="text-sm text-red-500 mt-2 whitespace-normal break-words">
+                                Skipped: {aiScheduleOptions[selectedAIOption].skipped_courses.join(", ")} (time conflict)
+                                </div>
+                                )}
                                 <p className="text-xs text-center text-slate-500 mt-4">
                                   Click card to preview on weekly grid
                                 </p>

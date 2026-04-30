@@ -347,18 +347,16 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
             grouped[course_id] = []
         grouped[course_id].append(section)
 
-    options = []
+    all_options = []
 
     def backtrack(index, current_schedule, skipped_courses):
-        if len(options) >= max_options:
-            return
-
         if index == len(course_ids):
-            options.append({
-                "name": f"Option {len(options) + 1}",
-                "sections": current_schedule.copy(),
-                "skipped_courses": skipped_courses.copy()
-            })
+            if current_schedule:
+                all_options.append({
+                    "name": f"Option {len(all_options) + 1}",
+                    "sections": current_schedule.copy(),
+                    "skipped_courses": skipped_courses.copy()
+                })
             return
 
         course_id = course_ids[index]
@@ -380,11 +378,28 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
 
     backtrack(0, [], [])
 
-    # Prefer options with more courses included
-    options.sort(key=lambda option: len(option.get("sections", [])), reverse=True)
+    # Sort: prefer schedules with more included courses
+    all_options.sort(
+        key=lambda option: len(option.get("sections", [])),
+        reverse=True
+    )
 
+    # Keep options that are actually different
+    unique_options = []
+    seen_signatures = set()
 
-    return options[:max_options]
+    for option in all_options:
+        crns = sorted(section.get("crn") for section in option.get("sections", []))
+        signature = tuple(crns)
+
+        if signature not in seen_signatures:
+            seen_signatures.add(signature)
+            unique_options.append(option)
+
+        if len(unique_options) >= max_options:
+            break
+
+    return unique_options
     
 def explain_no_results(course_ids, all_sections, filtered_sections, preferences):
     explanations = []
