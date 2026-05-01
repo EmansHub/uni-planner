@@ -46,10 +46,10 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const navigate = useNavigate();
   const [courseSections, setCourseSections] = useState<CourseSection[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
-  const [completedCourses, setCompletedCourses] = useState<Set<string>>(new Set());
   const [currentCourses, setCurrentCourses] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [showTranscriptUpload, setShowTranscriptUpload] = useState(false);
+  const [completedCourses, setCompletedCourses] = useState<Set<string>>(new Set());
 
   const loadCourseSections = async () => {
   setLoadingCourses(true);
@@ -286,31 +286,82 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     }
     setExpandedSections(newExpanded);
   };
+  
 
-  const handleCoursesExtracted = (extractedCourses: any[]) => {
-    // Match extracted courses with curriculum courses by code
+  const handleAuditUpload = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const response = await fetch("http://127.0.0.1:5000/read-degree-audit", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data: {
+      completed_courses: string[];
+      in_progress_courses: string[];
+    } = await response.json();
+
+    const allCourses = courseSections.flatMap(section => section.courses);
+
     const newCompleted = new Set(completedCourses);
-    const allCourses = courseSections.flatMap(s => s.courses);
-    
-    let matchedCount = 0;
-    extractedCourses.forEach(extractedCourse => {
-      const matchingCourse = allCourses.find(
-        c => c.code === extractedCourse.code || c.id === extractedCourse.id
-      );
-      if (matchingCourse) {
-        newCompleted.add(matchingCourse.id);
-        matchedCount++;
+    const newCurrent = new Set(currentCourses);
+
+    data.completed_courses.forEach((courseId) => {
+      const match = allCourses.find(course => course.id === courseId);
+
+      if (match) {
+        newCompleted.add(match.id);
+        newCurrent.delete(match.id);
       }
     });
-    
+
+    data.in_progress_courses.forEach((courseId) => {
+      const match = allCourses.find(course => course.id === courseId);
+
+      if (match && !newCompleted.has(match.id)) {
+        newCurrent.add(match.id);
+      }
+    });
+
     setCompletedCourses(newCompleted);
-    
-    if (matchedCount > 0) {
-      toast.success(`Successfully matched ${matchedCount} course(s) from your degree audit`);
-    } else {
-      toast.info('No matching courses found. You may need to add them manually.');
+    setCurrentCourses(newCurrent);
+
+    toast.success(
+      `Audit read: ${newCompleted.size} completed, ${newCurrent.size} in progress`
+    );
+  } catch (error) {
+    console.error("Audit upload error:", error);
+    toast.error("Failed to read degree audit");
+  }
+};
+
+  const handleCoursesExtracted = (extractedCourses: any[]) => {
+  const newCompleted = new Set(completedCourses);
+  const allCourses = courseSections.flatMap(s => s.courses);
+
+  let matchedCount = 0;
+
+  extractedCourses.forEach(extractedCourse => {
+    const matchingCourse = allCourses.find(
+      c => c.code === extractedCourse.code || c.id === extractedCourse.id
+    );
+
+    if (matchingCourse) {
+      newCompleted.add(matchingCourse.id);
+      matchedCount++;
     }
-  };
+  });
+
+  setCompletedCourses(newCompleted);
+
+  if (matchedCount > 0) {
+    toast.success(`Successfully matched ${matchedCount} course(s) from your degree audit`);
+  } else {
+    toast.info('No matching courses found. You may need to add them manually.');
+  }
+};
 
   const handleNext = () => {
     // Build the list of courses to show in drag-drop
@@ -647,6 +698,10 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         open={showTranscriptUpload}
         onClose={() => setShowTranscriptUpload(false)}
         onCoursesExtracted={handleCoursesExtracted}
+        onAuditRead={(completed, inProgress) => {
+          setCompletedCourses(new Set(completed));
+          setCurrentCourses(new Set(inProgress));
+        }}
       />
     </div>
   );

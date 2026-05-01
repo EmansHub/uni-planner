@@ -370,7 +370,36 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           !currentCourseIds.includes(course.id)
       );
 
-      const defaultSemesters = generateDefaultSemesters();
+      const wantsSummer =
+        aiPrompt.toLowerCase().includes("summer") ||
+        aiPrompt.toLowerCase().includes("fast") ||
+        aiPrompt.toLowerCase().includes("graduate faster");
+
+      let defaultSemesters = generateDefaultSemesters();
+
+      if (wantsSummer) {
+        const withSummer: Semester[] = [];
+
+        defaultSemesters.forEach((semester, index) => {
+          withSummer.push(semester);
+
+        // add summer after every 2 semesters
+        if (index % 2 === 1) {
+          const year = semester.id.split("-")[1];
+
+          withSummer.push({
+            id: `summer-${year}`,
+            name: `Summer ${year}`,
+            completed: false,
+            isSummer: true,
+            courses: [],
+          });
+        }
+      });
+
+      defaultSemesters = withSummer;
+    }
+
       const firstSemesterId = defaultSemesters[0]?.id;
 
       const semestersWithCurrentCourses = defaultSemesters.map((sem) =>
@@ -559,7 +588,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     let type = startType;
     let semesterYear = startYear;
 
-    while (generated.length < 8) {
+    while (generated.length < 14) {
       generated.push({
         id: `${type}-${semesterYear}`,
         name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${semesterYear}`,
@@ -1089,147 +1118,160 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     setDragOverSemester(null);
   };
 
-  const handleGeneratePlan = () => {
-    toast.info('AI is generating degree plans...');
+const handleGeneratePlan = async () => {
+  try {
+    toast.info('AI is generating degree plan...');
 
-    setTimeout(() => {
-      // Helper function to check if all prerequisites are satisfied
-      const prerequisitesSatisfied = (course: Course, placedCourses: Set<string>): boolean => {
-        if (!course.prerequisites || course.prerequisites.length === 0) return true;
+    const response = await fetch("http://127.0.0.1:5000/generate-degree-plan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        degree_program_code: user.major,
+        completed_courses: completedCourses.map((course) => course.id),
+        current_courses: semesters[0]?.courses.map((course) => course.id) || [],
+        preferences: aiPrompt,
+      }),
+    });
 
-        // Check if course can override prerequisites
-        if (restrictions.overrideCourses.some(override => override.courseId === course.id && override.verified)) return true;
+    const data = await response.json();
 
-        return course.prerequisites.every(prereqId =>
-          placedCourses.has(prereqId) || completedCourses.some(c => c.id === prereqId)
-        );
-      };
+    console.log("Backend degree plan result:", data);
 
-      // Helper function to check standing requirements
-      const standingRequirementsMet = (course: Course, totalHoursBeforeSemester: number): boolean => {
-        if (!course.requiredHours) return true;
+    if (!data.plan || data.plan.length === 0) {
+      toast.error(data.message || "No degree plan generated.");
+      return;
+    }
 
-        // Check if course can override standing requirements
-        if (
-          restrictions.overrideCourses.some(
-            override => override.courseId === course.id && override.verified
-          )
-        ) return true;
+    const allKnownCourses = [
+      ...coursesToTake,
+      ...completedCourses,
+      ...semesters.flatMap((semester) => semester.courses),
+      ...availableElectives,
+    ];
 
-        return totalHoursBeforeSemester >= course.requiredHours;
-      };
+    const courseMap = new Map<string, Course>();
 
-      // Generate a plan with a specific strategy
-      const generatePlan = (strategy: 'balanced' | 'frontloaded' | 'backloaded'): Semester[] => {
-        // Start with existing courses already in semesters
-        const planSemesters: Semester[] = semesters.map(sem => ({
-          ...sem,
-          courses: [...sem.courses]
-        }));
-        const remainingCourses = [...coursesToTake];
-        const placedCourseIds = new Set<string>();
+    allKnownCourses.forEach((course) => {
+      courseMap.set(course.id.replace(/\s+/g, '').toUpperCase(), course);
+    });
 
-        // Track courses already placed in semesters
-        planSemesters.forEach(sem => {
-          sem.courses.forEach(course => {
-            placedCourseIds.add(course.id);
+    const wantsSummer =
+      aiPrompt.toLowerCase().includes("summer") ||
+      aiPrompt.toLowerCase().includes("fast") ||
+      aiPrompt.toLowerCase().includes("graduate faster");
+
+    let defaultSemesters = generateDefaultSemesters();
+
+    const hasCurrentCourses = semesters[0]?.courses.length > 0;
+
+    if (hasCurrentCourses) {
+      defaultSemesters = defaultSemesters.slice(1);
+    }
+
+    if (wantsSummer) {
+      const withSummer: Semester[] = [];
+
+      defaultSemesters.forEach((semester, index) => {
+        withSummer.push(semester);
+
+        if (index % 2 === 1) {
+          withSummer.push({
+            id: `summer-${index}`,
+            name: `Summer`,
+            completed: false,
+            isSummer: true,
+            courses: [],
           });
-        });
-
-        // Sort semesters chronologically
-        const sortedSemesters = [...planSemesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
-
-        for (let semIndex = 0; semIndex < sortedSemesters.length; semIndex++) {
-          const semester = sortedSemesters[semIndex];
-          const isSummer = semester.isSummer;
-          const maxCredits = isSummer ? 9 : 20;
-
-          // Calculate total hours before this semester (including completed and courses in previous semesters)
-          let hoursBeforeSemester = getTotalCompletedCredits();
-          for (let i = 0; i < semIndex; i++) {
-            hoursBeforeSemester += sortedSemesters[i].courses.reduce((sum, c) =>
-              c.isPrepCourse ? sum : sum + c.credits, 0
-            );
-          }
-
-          // Calculate current hours in this semester (from already placed courses)
-          let semesterHours = semester.courses.reduce((sum, c) => {
-            return sum + (c.isPrepCourse ? (c.semesterHours || 0) : c.credits);
-          }, 0);
-
-          // Check if any course must be alone
-          const hasAloneCourse = semester.courses.some(c => c.mustBeAlone);
-
-          // Determine target credits based on strategy
-          let targetCredits = maxCredits;
-          if (strategy === 'balanced') {
-            targetCredits = isSummer ? 9 : 15;
-          } else if (strategy === 'frontloaded') {
-            targetCredits = semIndex < sortedSemesters.length / 2 ? maxCredits : (isSummer ? 6 : 12);
-          } else if (strategy === 'backloaded') {
-            targetCredits = semIndex >= sortedSemesters.length / 2 ? maxCredits : (isSummer ? 6 : 12);
-          }
-
-          // Skip adding more courses if we already have a course that must be alone
-          if (hasAloneCourse) continue;
-
-          // Add courses that can be taken
-          let changed = true;
-          while (changed && semesterHours < targetCredits && remainingCourses.length > 0) {
-            changed = false;
-
-            for (let i = remainingCourses.length - 1; i >= 0; i--) {
-              const course = remainingCourses[i];
-              const courseHours = course.isPrepCourse ? (course.semesterHours || 0) : course.credits;
-
-              // Check if adding this course would exceed limits
-              if (semesterHours + courseHours > maxCredits) continue;
-
-              // Check if course must be alone (and semester has other courses)
-              if (course.mustBeAlone && semester.courses.length > 0) continue;
-
-              // Check semester-specific course availability from DB
-              if (!isCourseAllowedInSemester(course.id, semester.id)) continue;
-              
-              // Check prerequisites
-              if (!prerequisitesSatisfied(course, placedCourseIds)) continue;
-
-              // Check standing requirements
-              if (!standingRequirementsMet(course, hoursBeforeSemester)) continue;
-
-              // Add course to semester
-              semester.courses.push(course);
-              semesterHours += courseHours;
-              placedCourseIds.add(course.id);
-              remainingCourses.splice(i, 1);
-              changed = true;
-
-              // If course must be alone, stop adding to this semester
-              if (course.mustBeAlone) break;
-            }
-          }
         }
+      });
 
-        // Map back to original semester order
-        return planSemesters.map(sem => {
-          const sorted = sortedSemesters.find(s => s.id === sem.id);
-          return sorted || sem;
-        });
+      defaultSemesters = withSummer;
+    }
+
+    const backendPlan = data.plan.map((semesterCourseIds: string[], index: number) => {
+      let baseSemester =
+        defaultSemesters[index] || {
+        id: `generated-${index + 1}`,
+        name: `Semester ${index + 1}`,
+        completed: false,
+        isSummer: false,
+        courses: [],
       };
 
-      const plan1 = generatePlan('balanced');
-      const plan2 = generatePlan('frontloaded');
-      const plan3 = generatePlan('backloaded');
+    const courses = semesterCourseIds
+      .map((courseId) =>
+        courseMap.get(courseId.replace(/\s+/g, '').toUpperCase())
+      )
+      .filter(Boolean);
 
-      setGeneratedPlans([plan1, plan2, plan3]);
-      setCurrentPlanIndex(0);
-      toast.success('Generated 3 plan options!');
-    }, 1500);
-  };
+    //force internship to be summer
+    if (
+      courses.length === 1 &&
+      courses[0]?.name?.toLowerCase().includes("internship")
+    ) {
+      baseSemester = {
+        ...baseSemester,
+        name: "Summer",
+        isSummer: true,
+      };
+    }
+
+    return {
+      ...baseSemester,
+      courses,
+    };
+  });
+
+  //move internship to summer slot
+let finalPlan = [...backendPlan];
+
+const internshipIndex = finalPlan.findIndex(
+  (sem) =>
+    sem.courses.length === 1 &&
+    sem.courses[0]?.name?.toLowerCase().includes("internship")
+);
+
+if (internshipIndex !== -1) {
+  const internshipSemester = finalPlan[internshipIndex];
+
+  // remove it from current position
+  finalPlan.splice(internshipIndex, 1);
+
+  // insert at summer position (after last spring)
+  finalPlan.push({
+    ...internshipSemester,
+    name: "Summer",
+    isSummer: true,
+  });
+}
+
+  const cleanedPlan = finalPlan.filter(
+      (sem) => sem.courses.length > 0
+    );
+
+    setGeneratedPlans([cleanedPlan]);
+    setCurrentPlanIndex(0);
+    toast.success("AI degree plan generated!");
+
+    } catch (error) {
+    console.error("AI degree plan error:", error);
+    toast.error("Failed to generate degree plan.");
+  }
+};
 
   const handleApplyPlan = () => {
     if (generatedPlans.length > 0) {
-      setSemesters(generatedPlans[currentPlanIndex]);
+      const currentSemester = semesters[0];
+
+      const finalPlan =
+        currentSemester && currentSemester.courses.length > 0
+          ? [currentSemester, ...generatedPlans[currentPlanIndex]]
+          : generatedPlans[currentPlanIndex];
+
+      setSemesters(finalPlan);
+      
       setCoursesToTake([]);
       setShowAIDialog(false);
       setGeneratedPlans([]);
@@ -1906,7 +1948,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                 <DialogHeader>
                   <DialogTitle>AI Degree Plan Generator</DialogTitle>
                   <DialogDescription>
-                    Describe your preferences (optional) and we'll generate optimal degree plans for you
+                    Describe your preferences (optional) and we'll generate optimal degree plan for you
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -1916,7 +1958,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                         <Label htmlFor="ai-prompt">Your Preferences (Optional)</Label>
                         <Textarea
                           id="ai-prompt"
-                          placeholder="e.g., I want to take more courses in Fall semesters, balance the workload evenly, prioritize required courses first"
+                          placeholder="e.g., Light semesters, fast plan with summer, max 15 hours, no summer"
                           value={aiPrompt}
                           onChange={(e) => setAiPrompt(e.target.value)}
                           rows={4}
@@ -1952,6 +1994,10 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                       </div>
 
                       <div className="border rounded-lg p-4 bg-slate-50 space-y-3 max-h-96 overflow-y-auto">
+                        <p className="text-xs text-slate-500">
+                          Preferences: {aiPrompt || "None"}
+                        </p>
+
                         {generatedPlans[currentPlanIndex].map(semester => (
                           <div key={semester.id} className="bg-white p-3 rounded border">
                             <h4 className="font-medium mb-2">{formatSemesterName(semester.id)}</h4>

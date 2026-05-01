@@ -8,6 +8,8 @@ import os
 from flask_cors import CORS
 from supabase_client import supabase
 import re
+from PyPDF2 import PdfReader
+import io
 
 
 app = Flask(__name__)
@@ -310,10 +312,6 @@ def can_add_section(schedule_sections, new_section):
 
     return True
 
-def score_schedule(schedule):
-    score = 0
-    preferences = preferences.lower()
-
     for section in schedule:
         for meeting in section.get("course_section_meetings", []):
             start = time_to_minutes(meeting["start_time"])
@@ -492,7 +490,55 @@ def explain_no_results(course_ids, all_sections, filtered_sections, preferences)
 
     return explanations
 
+def get_required_courses_for_program(degree_program_code):
+    response = (
+        supabase.table("curriculum_section_courses")
+        .select("""
+            course_id,
+            course_category,
+            courses (
+                id,
+                name,
+                credits
+            )
+        """)
+        .eq("degree_program_code", degree_program_code)
+        .execute()
+    )
+    return response.data or []
+
+
+def get_completed_courses_for_plan(degree_plan_id):
+    response = (
+        supabase.table("degree_plan_completed_courses")
+        .select("course_id")
+        .eq("degree_plan_id", degree_plan_id)
+        .execute()
+    )
+    return [row["course_id"] for row in (response.data or [])]
+
+
+def get_prerequisites():
+    response = (
+        supabase.table("course_prerequisites")
+        .select("course_id, prerequisite_course_id")
+        .execute()
+    )
+
+    prereq_map = {}
+
+    for row in response.data or []:
+        course_id = row["course_id"]
+        prereq_id = row["prerequisite_course_id"]
+
+        if course_id not in prereq_map:
+            prereq_map[course_id] = []
+
+        prereq_map[course_id].append(prereq_id)
+
+    return prereq_map
     
+
 @app.route('/generate-schedule', methods=['POST'])
 def generate_schedule():
     try:
@@ -573,6 +619,356 @@ def generate_schedule():
     except Exception as e:
         print("GENERATE SCHEDULE ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
+    
+    
+def get_curriculum_required_credits(degree_program_code):
+    response = (
+        supabase.table("curriculum_sections")
+        .select("course_category, required_credits")
+        .eq("degree_program_code", degree_program_code)
+        .execute()
+    )
+
+    return {
+        row["course_category"]: row["required_credits"]
+        for row in (response.data or [])
+    }    
+    
+def get_max_credits_from_preferences(preferences):
+    preferences = preferences.lower()
+
+    match = re.search(r'max\s*(\d+)', preferences)
+    if match:
+        return int(match.group(1))
+
+    match = re.search(r'(\d+)\s*(hours|credits)', preferences)
+    if match:
+        return int(match.group(1))
+
+    if "heavy" in preferences or "graduate faster" in preferences or "fast" in preferences:
+        return 20
+
+    if "light" in preferences:
+        return 13
+
+    return 17   
+
+def should_include_summer(preferences):
+    preferences = preferences.lower()
+
+    if "no summer" in preferences or "without summer" in preferences:
+        return False
+
+    if "summer" in preferences or "fast" in preferences or "graduate faster" in preferences:
+        return True
+
+    return False 
+
+
+def compact_degree_plan(semesters, course_info, max_credits, summer_max_credits=9, include_summer=False):
+    changed = True
+
+    while changed:
+        changed = False
+
+        for i in range(len(semesters) - 1, 0, -1):
+            # only fix normal one-course semesters
+            if len(semesters[i]) != 1:
+                continue
+
+            course = semesters[i][0]
+            course_name = course_info[course]["name"].lower()
+
+            # do NOT move internship
+            if "internship" in course_name:
+                continue
+
+            credits = course_info[course]["credits"]
+            
+            for j in range(i):
+                # every 3rd semester is summer if summer is included
+                target_is_summer = include_summer and j % 3 == 2
+                target_max = summer_max_credits if target_is_summer else max_credits
+                
+                current_credits = sum(course_info[c]["credits"] for c in semesters[j])
+                
+                if current_credits + credits <= target_max:
+                    semesters[j].append(course)
+                    semesters.pop(i)
+                    changed = True
+                    break
+
+            if changed:
+                break
+
+    return semesters
+
+
+@app.route('/generate-degree-plan', methods=['POST'])
+def generate_degree_plan():
+    try:
+        data = request.get_json(silent=True) or {}
+
+        degree_program_code = data.get("degree_program_code")
+        completed_courses = data.get("completed_courses", [])
+        current_courses = data.get("current_courses", [])
+        preferences = data.get("preferences", "")
+        MAX_CREDITS = get_max_credits_from_preferences(preferences)
+        include_summer = should_include_summer(preferences)
+        SUMMER_MAX_CREDITS = 9
+
+        if not degree_program_code:
+            return jsonify({"error": "degree_program_code is required"}), 400
+
+        all_courses = get_required_courses_for_program(degree_program_code)
+
+        course_info = {}
+        required_course_ids = []
+
+        for row in all_courses:
+            course_id = row["course_id"].replace(" ", "").upper()
+            course_data = row.get("courses") or {}
+
+            course_info[course_id] = {
+                "id": course_id,
+                "name": course_data.get("name", ""),
+                "credits": course_data.get("credits", 3),
+                "category": row.get("course_category", "")
+            }
+
+            required_course_ids.append(course_id)
+            
+        
+        internship_courses = []
+
+        for course_id, info in course_info.items():
+            name = info["name"].lower()
+
+            if "internship" in name:
+                internship_courses.append(course_id)
+                
+        
+        senior_project_courses = []
+
+        for course_id, info in course_info.items():
+            name = info["name"].lower()
+
+            if "senior project" in name or "capstone" in name:
+                senior_project_courses.append(course_id)        
+            
+        required_credits_by_category = get_curriculum_required_credits(degree_program_code)
+
+        selected_required_courses = []
+        category_credit_count = {}
+
+        for course_id in required_course_ids:
+            category = course_info[course_id]["category"]
+            credits = course_info[course_id]["credits"]
+
+            if category not in category_credit_count:
+                category_credit_count[category] = 0
+
+            required_credits = required_credits_by_category.get(category)
+
+            # If no required limit exists, keep the course
+            if required_credits is None:
+                selected_required_courses.append(course_id)
+                continue
+
+            # For elective categories, only take enough credits
+            if "Elective" in category:
+                if category_credit_count[category] < required_credits:
+                    selected_required_courses.append(course_id)
+                    category_credit_count[category] += credits
+            else:
+                selected_required_courses.append(course_id)    
+
+        completed_set = set([
+            c.replace(" ", "").upper()
+            for c in completed_courses
+        ])
+        
+        current_set = set([
+            c.replace(" ", "").upper()
+            for c in current_courses
+        ])
+
+        blocked_set = completed_set.union(current_set)
+
+        remaining_courses = [
+            c for c in selected_required_courses
+            if c not in blocked_set
+        ]
+        
+        for internship in internship_courses:
+            if internship in remaining_courses:
+                remaining_courses.remove(internship)
+                
+        for senior_project in senior_project_courses:
+            if senior_project in remaining_courses:
+                remaining_courses.remove(senior_project)        
+        
+
+        def get_priority(category):
+            order = {
+                "Preparation Program": 1,
+                "Core Curriculum": 2,
+                "Degree Specific Core": 3,
+                "College Core": 4,
+                "Major Core": 5,
+                "Major Electives": 6,
+            }
+            return order.get(category, 10)
+
+        remaining_courses.sort(
+            key=lambda c: get_priority(course_info[c]["category"])
+        )
+
+        prereq_map = get_prerequisites()
+
+        semesters = []
+        taken = set(blocked_set)
+        
+        semester_index = 0
+
+        while remaining_courses:
+            semester_courses = []
+            semester_credits = 0
+            
+            if include_summer and semester_index % 3 == 2:
+                current_max = SUMMER_MAX_CREDITS   # summer
+            else:
+                current_max = MAX_CREDITS          # fall/spring
+
+            for course in remaining_courses[:]:
+                prereqs = prereq_map.get(course, [])
+
+                if all(pr in taken for pr in prereqs):
+                    credits = course_info[course]["credits"]
+
+                    if semester_credits + credits <= current_max:
+                        semester_courses.append(course)
+                        semester_credits += credits
+
+                if semester_credits >= current_max:
+                    break
+
+            if not semester_courses:
+                return jsonify({
+                    "message": "Could not build full plan due to missing prerequisites.",
+                    "remaining_courses": remaining_courses
+                })
+
+            semesters.append(semester_courses)
+
+            for c in semester_courses:
+                taken.add(c)
+                remaining_courses.remove(c)
+                
+            semester_index += 1
+            
+        for senior_project in senior_project_courses:
+            if senior_project not in completed_set:
+                credits = course_info[senior_project]["credits"]
+                placed = False
+
+        # try to place in the latest non-summer semester
+            for i in range(len(semesters) - 1, -1, -1):
+                is_summer = include_summer and i % 3 == 2
+
+                if is_summer:
+                    continue
+
+                current_credits = sum(course_info[c]["credits"] for c in semesters[i])
+
+                if current_credits + credits <= MAX_CREDITS:
+                    semesters[i].append(senior_project)
+                    placed = True
+                    break
+
+        # if it does not fit anywhere, add a new normal semester
+            if not placed:
+                semesters.append([senior_project])
+
+        for internship in internship_courses:
+            if internship not in completed_set:
+                semesters.append([internship])    
+                
+    
+        semesters = compact_degree_plan(
+            semesters,
+            course_info,
+            MAX_CREDITS,
+            SUMMER_MAX_CREDITS,
+            include_summer
+        )
+        
+        return jsonify({
+            "message": "Degree plan generated",
+            "total_semesters": len(semesters),
+            "plan": semesters
+        })
+
+    except Exception as e:
+        print("DEGREE PLAN ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/read-degree-audit', methods=['POST'])
+def read_degree_audit():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        uploaded_file = request.files['file']
+
+        reader = PdfReader(io.BytesIO(uploaded_file.read()))
+
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+            print(text[:5000])
+
+        course_codes = re.findall(r'\b[A-Z]{3,4}\s?\d{4}\b', text)
+        
+        normalized_courses = sorted(set(
+            code.replace(" ", "").upper()
+            for code in course_codes
+        ))
+        
+        in_progress_courses = []
+
+        in_progress_match = re.search(
+            r'In-progress Credits applied:.*?(?=Legend|Disclaimer|$)',
+            text,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        if in_progress_match:
+            in_progress_text = in_progress_match.group(0)
+            in_progress_courses = re.findall(r'\b[A-Z]{3,4}\s?\d{4}\b', in_progress_text)
+
+        in_progress_courses = sorted(set(
+            code.replace(" ", "").upper()
+            for code in in_progress_courses
+        ))
+        
+        completed_courses = [
+            course for course in normalized_courses
+            if course not in in_progress_courses
+        ]
+
+
+        return jsonify({
+            "message": "Degree audit read successfully",
+            "completed_courses": completed_courses,
+            "in_progress_courses": in_progress_courses,
+            "courses_found": normalized_courses
+        })
+
+    except Exception as e:
+        print("AUDIT READ ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500    
+
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)

@@ -9,6 +9,7 @@ interface TranscriptUploadProps {
   open: boolean;
   onClose: () => void;
   onCoursesExtracted: (courses: any[]) => void;
+  onAuditRead?: (completedCourses: string[], inProgressCourses: string[]) => void;
 }
 
 // Mock courses that simulate extraction from degree audit
@@ -24,7 +25,7 @@ const MOCK_EXTRACTED_COURSES = [
   { id: 'PHED1111', code: 'PHED 1111', name: 'Active Living Lifestyle', credits: 1 },
 ];
 
-export function TranscriptUpload({ open, onClose, onCoursesExtracted }: TranscriptUploadProps) {
+export function TranscriptUpload({ open, onClose, onCoursesExtracted, onAuditRead }: TranscriptUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
 
@@ -32,9 +33,9 @@ export function TranscriptUpload({ open, onClose, onCoursesExtracted }: Transcri
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       // Check file type
-      const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+      const validTypes = ['application/pdf'];
       if (!validTypes.includes(selectedFile.type)) {
-        toast.error('Please upload a PDF or image file (JPG, PNG)');
+        toast.error('Please upload a PDF file here');
         return;
       }
       
@@ -48,31 +49,51 @@ export function TranscriptUpload({ open, onClose, onCoursesExtracted }: Transcri
     }
   };
 
-  const handleProcess = () => {
-    if (!file) {
-      toast.error('Please upload a file first');
-      return;
+const handleProcess = async () => {
+  if (!file) {
+    toast.error('Please upload a file first');
+    return;
+  }
+
+  setProcessing(true);
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('http://127.0.0.1:5000/read-degree-audit', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const result: {
+      completed_courses: string[];
+      in_progress_courses: string[];
+      courses_found: string[];
+      message?: string;
+      error?: string;
+    } = await response.json();
+
+    if (!response.ok || result.error) {
+      throw new Error(result.error || 'Failed to read audit');
     }
 
-    setProcessing(true);
-    
-    // Simulate processing with delay
-    setTimeout(() => {
-      // In a real implementation, this would:
-      // 1. Send file to backend API
-      // 2. Use OCR + NLP to extract course information
-      // 3. Parse degree audit structure and identify courses
-      // 4. Return structured course data
-      
-      // Automatically apply extracted courses
-      onCoursesExtracted(MOCK_EXTRACTED_COURSES);
-      toast.success(`${MOCK_EXTRACTED_COURSES.length} course(s) extracted and added`);
-      
-      // Reset and close
-      handleReset();
-      onClose();
-    }, 2500);
-  };
+    if (onAuditRead) {
+      onAuditRead(result.completed_courses || [], result.in_progress_courses || []);
+    }
+
+    toast.success(
+      `Audit read: ${(result.completed_courses || []).length} completed, ${(result.in_progress_courses || []).length} in progress`
+    );
+
+    handleReset();
+    onClose();
+  } catch (error) {
+    console.error('Audit upload error:', error);
+    toast.error('Failed to read degree audit');
+    setProcessing(false);
+  }
+};
 
   const handleReset = () => {
     setFile(null);
@@ -88,11 +109,9 @@ export function TranscriptUpload({ open, onClose, onCoursesExtracted }: Transcri
             Upload Degree Audit
           </DialogTitle>
           <DialogDescription>
-            Upload your degree audit (PDF or image) and we'll add your completed courses automatically.
+            Upload your degree audit (PDF) and we'll add your completed courses automatically.
             <br />
-            <span className="text-amber-600 mt-1 block">
-              ⚠️ Prototype Mode: This simulates extraction with sample data
-            </span>
+          
           </DialogDescription>
         </DialogHeader>
 
@@ -117,7 +136,7 @@ export function TranscriptUpload({ open, onClose, onCoursesExtracted }: Transcri
                         <>
                           <Upload className="w-10 h-10 mb-2 text-gray-400" />
                           <p className="text-sm text-gray-600">Click to upload degree audit</p>
-                          <p className="text-xs text-gray-500">PDF, JPG, or PNG (max 10MB)</p>
+                          <p className="text-xs text-gray-500">PDF (max 10MB)</p>
                         </>
                       )}
                     </div>
@@ -125,7 +144,7 @@ export function TranscriptUpload({ open, onClose, onCoursesExtracted }: Transcri
                       id="file-upload"
                       type="file"
                       className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png"
+                      accept=".pdf"
                       onChange={handleFileChange}
                     />
                   </label>
