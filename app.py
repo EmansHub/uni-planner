@@ -10,6 +10,8 @@ from supabase_client import supabase
 import re
 from PyPDF2 import PdfReader
 import io
+import base64
+import json
 
 
 app = Flask(__name__)
@@ -967,7 +969,67 @@ def read_degree_audit():
 
     except Exception as e:
         print("AUDIT READ ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500    
+        return jsonify({"error": str(e)}), 500
+    
+    
+@app.route('/verify-override-proof', methods=['POST'])
+def verify_override_proof():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        uploaded_file = request.files['file']
+        image_bytes = uploaded_file.read()
+        mime_type = uploaded_file.mimetype or "image/jpeg"
+
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        image_data_url = f"data:{mime_type};base64,{base64_image}"
+
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            instructions="""
+You read screenshots of PMU approval emails.
+
+Return ONLY JSON:
+
+{
+  "approved": true or false,
+  "type": "override" or "overload",
+  "course_id": "COSC4363 or null",
+  "course_name": "name or null",
+  "section": "section or null",
+  "reason": "short explanation"
+}
+
+If it's about course override → type = "override"
+
+If it's about credit overload approval → type = "overload"
+""",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Verify if this screenshot confirms an approved restriction override."
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": image_data_url
+                        }
+                    ]
+                }
+            ]
+        )
+
+        result_text = response.output_text.strip()
+        result = json.loads(result_text)
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("OVERRIDE VERIFY ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500        
 
 
 if __name__ == '__main__':
