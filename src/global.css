@@ -214,3 +214,17 @@ html {
 [draggable="true"] * {
   pointer-events: none;
 }
+
+/* Fix Sonner toast overflow (long messages going outside box) */
+[data-sonner-toast] {
+  max-width: 420px !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+[data-sonner-toast] * {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
