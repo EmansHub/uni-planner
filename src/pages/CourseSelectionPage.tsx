@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, Home, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, Home, Upload, RotateCcw } from 'lucide-react';
 import type { User } from '../App';
 import { Collapsible, CollapsibleContent } from '../ui/collapsible';
 import { Separator } from '../ui/separator';
@@ -277,6 +277,23 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     
     setCompletedCourses(newCompleted);
     setCurrentCourses(newCurrent);
+  };
+
+  const clearSection = (section: CourseSection) => {
+    const sectionCourseIds = section.courses.map(c => c.id);
+
+    const newCompleted = new Set(
+      Array.from(completedCourses).filter(id => !sectionCourseIds.includes(id))
+    );
+
+    const newCurrent = new Set(
+      Array.from(currentCourses).filter(id => !sectionCourseIds.includes(id))
+    );
+
+    setCompletedCourses(newCompleted);
+    setCurrentCourses(newCurrent);
+
+    toast.info(`Cleared selections in ${section.title}`);
   };
 
   const toggleSection = (sectionTitle: string) => {
@@ -565,14 +582,26 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                           
                           <div className="flex items-center gap-2">
                             {!section.isElective && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => markSectionCompleted(section)}
-                              >
-                                <CheckCircle2 className="w-4 h-4 mr-1" />
-                                Mark All Completed
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => markSectionCompleted(section)}
+                                >
+                                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                                  Mark All Completed
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="px-2"
+                                  onClick={() => clearSection(section)}
+                                  title="Clear section"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </Button>
+                              </div>
                             )}
                             
                             {section.isElective ? (
