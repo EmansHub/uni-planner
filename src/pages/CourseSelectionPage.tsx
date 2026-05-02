@@ -24,6 +24,7 @@ interface CourseSection {
   electiveNote?: string;
   maxElectives?: number;
   displayOrder?: number;
+  requiredCredits?: number;
 }
 
 interface Course {
@@ -166,6 +167,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
             electiveNote,
             maxElectives,
             displayOrder: meta?.displayOrder ?? 99,
+            requiredCredits: meta?.requiredCredits ?? totalCredits,
           };
         }
       );
@@ -363,6 +365,16 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   }
 };
 
+  const getCappedCredits = (courses: Course[], section?: CourseSection) => {
+    const total = courses.reduce((sum, course) => sum + course.credits, 0);
+
+    if (!section?.isElective || !section.requiredCredits) {
+      return total;
+    }
+
+    return Math.min(total, section.requiredCredits);
+  };
+
   const handleNext = () => {
     // Build the list of courses to show in drag-drop
     const coursesToShow: Course[] = [];
@@ -447,14 +459,14 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   };
 
   const totalCredits = courseSections.flatMap(s => s.courses).reduce((sum, c) => sum + c.credits, 0);
-  const completedCredits = courseSections
-    .flatMap(s => s.courses)
-    .filter(c => completedCourses.has(c.id))
-    .reduce((sum, c) => sum + c.credits, 0);
-  const currentCredits = courseSections
-    .flatMap(s => s.courses)
-    .filter(c => currentCourses.has(c.id))
-    .reduce((sum, c) => sum + c.credits, 0);
+  const completedCredits = courseSections.reduce((sum, section) => {
+    const selectedCourses = section.courses.filter(c => completedCourses.has(c.id));
+    return sum + getCappedCredits(selectedCourses, section);
+  }, 0);
+  const currentCredits = courseSections.reduce((sum, section) => {
+    const selectedCourses = section.courses.filter(c => currentCourses.has(c.id));
+    return sum + getCappedCredits(selectedCourses, section);
+  }, 0);
 
   if (loadingCourses) {
     return (
@@ -646,7 +658,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                                               </p>
                                             )}
                                             {course.requiredHours && (
-                                              <p className="text-xs text-blue-600 mt-1">
+                                              <p className="text-xs text-foreground mt-1">
                                                 Requires {course.requiredHours === 30 ? 'Sophomore' : course.requiredHours === 60 ? 'Junior' : course.requiredHours === 90 ? 'Senior' : `${course.requiredHours}-hour`} standing ({course.requiredHours} hours)
                                               </p>
                                             )}

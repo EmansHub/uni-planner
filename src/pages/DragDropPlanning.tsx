@@ -89,13 +89,56 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [originalElectiveToReplace, setOriginalElectiveToReplace] = useState<Course | null>(null);
   const [totalRequiredCredits, setTotalRequiredCredits] = useState(0);
   const [courseOfferingRules, setCourseOfferingRules] = useState<Record<string, string[]>>({});
-  
-  const getTotalCompletedCredits = () => {
-  return completedCourses.reduce((sum, course) => {
-    if (!course) return sum;
-    return sum + (course.credits || 0);
-  }, 0);
+  const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
+
+  const getCourseElectiveCategory = (course: Course) => {
+  if (course.electiveCategory) return course.electiveCategory;
+
+  const matchingElective = availableElectives.find(
+    elective => elective.id === course.id
+  );
+
+  return matchingElective?.electiveCategory;
 };
+
+const getCappedDegreeCredits = (
+    courses: Course[],
+    options?: { excludeRepeats?: boolean }
+  ) => {
+    let regularCredits = 0;
+    const electiveTotals: Record<string, number> = {};
+
+    courses.forEach((course) => {
+      if (!course || course.isPrepCourse) return;
+
+      if (options?.excludeRepeats && restrictions.repeatCourseIds.includes(course.id)) {
+        return;
+      }
+
+      const electiveCategory = getCourseElectiveCategory(course);
+
+      if (electiveCategory && electiveCategory.toLowerCase().includes('elective')) {
+        electiveTotals[electiveCategory] =
+          (electiveTotals[electiveCategory] || 0) + (course.credits || 0);
+      } else {
+        regularCredits += course.credits || 0;
+      }
+    });
+
+    const cappedElectiveCredits = Object.entries(electiveTotals).reduce(
+      (sum, [category, total]) => {
+        const limit = electiveCreditLimits[category] ?? total;
+        return sum + Math.min(total, limit);
+      },
+      0
+    );
+
+    return regularCredits + cappedElectiveCredits;
+  };
+
+  const getTotalCompletedCredits = () => {
+    return getCappedDegreeCredits(completedCourses);
+  };
   
   const loadPlanFromSupabase = async (targetPlanId: string) => {
     const { data: planRow, error: planError } = await supabase
@@ -338,12 +381,35 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     setTotalRequiredCredits(total);
   };
 
+  const loadElectiveCreditLimits = async () => {
+    const { data, error } = await supabase
+      .from('curriculum_sections')
+      .select('course_category, required_credits')
+      .eq('degree_program_code', user.major);
+
+    if (error) {
+      console.error('Error loading elective credit limits:', error);
+      return;
+    }
+
+    const limits: Record<string, number> = {};
+
+    (data || []).forEach((row: any) => {
+      if (String(row.course_category).toLowerCase().includes('elective')) {
+        limits[row.course_category] = row.required_credits || 0;
+      }
+    });
+
+    setElectiveCreditLimits(limits);
+  };
+
   useEffect(() => {
     const initializePage = async () => {
       setLoadingPlan(true);
 
       await loadOfferingRules();
       await loadTotalRequiredCredits();
+      await loadElectiveCreditLimits();
       
       // If editing existing plan → load from DB
       if (planId) {
@@ -442,20 +508,11 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getTotalPlannedCredits = () => {
-    // Only count regular courses (not prep courses) toward degree credits
-    // Exclude repeat courses since the student already has credit for them
-    let totalPlanned = 0;
-    semesters.forEach((semester) => {
-      semester.courses.forEach((course) => {
-        if (course.isPrepCourse) return;
-        // Skip repeat courses - student already has these credits
-        if (restrictions.repeatCourseIds.includes(course.id)) {
-          return;
-        }
-        totalPlanned += course.credits;
-      });
+    const plannedCourses = semesters.flatMap((semester) => semester.courses);
+
+    return getCappedDegreeCredits(plannedCourses, {
+      excludeRepeats: true,
     });
-    return totalPlanned;
   };
 
   const getRemainingCredits = () => {
@@ -1710,7 +1767,7 @@ if (internshipIndex !== -1) {
                     </div>
                     <button
                       type="button"
-                      className="text-xs text-blue-600 hover:text-blue-800 underline ml-6 flex items-center gap-1"
+                      className="text-xs text-foreground hover:text-blue-800 underline ml-6 flex items-center gap-1"
                       onClick={() => setShowOverloadInfoDialog(true)}
                     >
                       <Info className="w-3 h-3" />

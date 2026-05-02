@@ -120,7 +120,7 @@ export function EditPasswordPage({}: EditPasswordPageProps) {
             </Button>
             <CardTitle>Change Password</CardTitle>
             <CardDescription>
-              Enter your new password, send a verification code to your email, then confirm the change.
+              Enter your new password, send a verification code to your email, enter the code you, then confirm the change.
             </CardDescription>
           </CardHeader>
 
@@ -147,18 +147,6 @@ export function EditPasswordPage({}: EditPasswordPageProps) {
                 onChange={(e) => setConfirmNewPassword(e.target.value)}
                 disabled={loading}
               />
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
-                <strong>Password Change Process:</strong>
-              </p>
-              <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc">
-                <li>Fill in both password fields first</li>
-                <li>Send the verification code to your email</li>
-                <li>Enter the code below</li>
-                <li>Click Change Password to confirm</li>
-              </ul>
             </div>
 
             <div className="flex gap-2 pt-2">

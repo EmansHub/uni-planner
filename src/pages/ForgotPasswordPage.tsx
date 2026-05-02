@@ -107,7 +107,7 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
               <button
                 type="button"
                 onClick={() => navigate('/login')}
-                className="text-blue-600 hover:underline font-medium"
+                className="text-foreground hover:underline font-medium"
               >
                 Back to Login
               </button>

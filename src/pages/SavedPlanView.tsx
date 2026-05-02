@@ -19,6 +19,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const navigate = useNavigate();
   const [plan, setPlan] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
   const maxHistorySize = 10;
 
   const formatSemesterName = (semesterId: string) => {
@@ -186,27 +187,61 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       })
       .filter(Boolean);
 
-      setPlan({
-        id: String(data.id),
-        name: data.name,
-        semesters: semestersObject,
-        allCourses,
-        completedCoursesData,
-        originalCompletedIds: completedCoursesData.map((c: any) => c.id),
-        restrictions: {
-          hasOverload: !!data.has_overload,
-          repeatCourseIds: (data.degree_plan_repeat_courses || []).map((r: any) => r.course_id),
-          overrideCourses: (data.degree_plan_override_courses || []).map((r: any) => ({
-            courseId: r.course_id,
-            proofImage: '',
-            verified: true,
-          })),
-        },
-      });
-    };
+    setPlan({
+      id: String(data.id),
+      name: data.name,
+      semesters: semestersObject,
+      allCourses,
+      completedCoursesData,
+      originalCompletedIds: completedCoursesData.map((c: any) => c.id),
+      restrictions: {
+        hasOverload: !!data.has_overload,
+        repeatCourseIds: (data.degree_plan_repeat_courses || []).map((r: any) => r.course_id),
+        overrideCourses: (data.degree_plan_override_courses || []).map((r: any) => ({
+          courseId: r.course_id,
+          proofImage: '',
+          verified: true,
+        })),
+      },
+    });
+  };
+
+    const loadElectiveCreditLimits = async () => {
+    const { data: planMeta, error: planMetaError } = await supabase
+      .from('degree_plans')
+      .select('degree_program_code')
+      .eq('id', Number(planId))
+      .single();
+
+    if (planMetaError || !planMeta) {
+      console.error('Error loading plan program code for elective limits:', planMetaError);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('curriculum_sections')
+      .select('course_category, required_credits')
+      .eq('degree_program_code', planMeta.degree_program_code);
+
+    if (error) {
+      console.error('Error loading elective credit limits:', error);
+      return;
+    }
+
+    const limits: Record<string, number> = {};
+
+    (data || []).forEach((row: any) => {
+      if (String(row.course_category).toLowerCase().includes('elective')) {
+        limits[row.course_category] = row.required_credits || 0;
+      }
+    });
+
+    setElectiveCreditLimits(limits);
+  };
 
   useEffect(() => {
     loadSavedPlan();
+    loadElectiveCreditLimits();
     setHistory([]);
   }, [planId]);
 
@@ -457,11 +492,36 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
     );
   }
 
+  const getCappedCredits = (courses: any[]) => {
+    let regularCredits = 0;
+    const electiveTotals: Record<string, number> = {};
+
+    courses.forEach((course) => {
+      if (!course || course.credits === 0) return;
+
+      if (course.electiveCategory) {
+        electiveTotals[course.electiveCategory] =
+          (electiveTotals[course.electiveCategory] || 0) + course.credits;
+      } else {
+        regularCredits += course.credits;
+      }
+    });
+
+    const cappedElectiveCredits = Object.entries(electiveTotals).reduce(
+      (sum, [category, total]) => {
+        const limit = electiveCreditLimits[category] ?? total;
+        return sum + Math.min(total, limit);
+      },
+      0
+    );
+
+    return regularCredits + cappedElectiveCredits;
+  };
+
   const semesters = Object.values(plan.semesters) as any[];
   const totalCourses = semesters.reduce((sum, semester) => sum + semester.courses.length, 0);
-  const totalCredits = semesters.reduce(
-    (sum, semester) => sum + semester.courses.reduce((s: number, c: any) => s + c.credits, 0),
-    0
+  const totalCredits = getCappedCredits(
+    semesters.flatMap((semester: any) => semester.courses)
   );
   const completedSemesters = semesters.filter(s => s.completed).length;
 
@@ -537,7 +597,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
           )}
 
           {semesters.map((semester: any) => {
-            const semesterCredits = semester.courses.reduce((sum: number, c: any) => sum + c.credits, 0);
+            const semesterCredits = getCappedCredits(semester.courses);
 
             return (
               <Card key={semester.id} className={semester.completed ? 'bg-green-50 border-green-200' : ''}>

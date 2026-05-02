@@ -802,6 +802,46 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return Array.from(uniqueCRNs.values()).reduce((total, section) => total + section.credits, 0);
   };
 
+  const getLecLabWarnings = () => {
+    const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
+    const warnings: string[] = [];
+
+    const chosenByCourse = new Map<string, CourseSection[]>();
+
+    chosenSectionsList.forEach(section => {
+      const existing = chosenByCourse.get(section.courseCode) || [];
+
+      if (!existing.some(s => s.crn === section.crn)) {
+        existing.push(section);
+        chosenByCourse.set(section.courseCode, existing);
+      }
+    });
+
+    chosenByCourse.forEach((sections, courseCode) => {
+      const hasLecture = sections.some(s => s.sectionType === 'LEC');
+      const hasLab = sections.some(s => s.sectionType === 'LAB');
+      const hasCombined = sections.some(s => s.sectionType === 'LEC_LAB');
+
+      const allCourseSections = sectionsSource.filter(s => s.courseCode === courseCode);
+      const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
+      const courseHasLectures = allCourseSections.some(s => s.sectionType === 'LEC');
+
+      if (hasCombined) return;
+
+      if (courseHasLabs && courseHasLectures) {
+        if (hasLecture && !hasLab) {
+          warnings.push(`${courseCode}: Please select a lab.`);
+        }
+
+        if (hasLab && !hasLecture) {
+          warnings.push(`${courseCode}: Please select a lecture.`);
+        }
+      }
+    });
+
+    return warnings;
+  };
+
   const handleCopyCRNs = () => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
     // Remove duplicates by CRN (since sections with same CRN are now selected together)
@@ -826,16 +866,45 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     style.id = 'print-styles';
     style.textContent = `
       @media print {
+        @page {
+          size: landscape;
+          margin: 0.5in;
+        }
+
         body * {
           visibility: hidden;
         }
-        #weekly-schedule-print, #weekly-schedule-print * {
+
+        #weekly-schedule-print,
+        #weekly-schedule-print * {
           visibility: visible;
         }
+
         #weekly-schedule-print {
           position: absolute;
           left: 0;
           top: 0;
+          width: 100%;
+          max-width: none;
+          box-shadow: none;
+          border: none;
+        }
+
+        #weekly-schedule-print .h-\\[calc\\(100vh-260px\\)\\] {
+          height: auto !important;
+          overflow: visible !important;
+        }
+
+        #weekly-schedule-print .overflow-auto {
+          overflow: visible !important;
+        }
+
+        #weekly-schedule-print .grid {
+          page-break-inside: avoid;
+        }
+
+        button {
+          display: none !important;
         }
       }
     `;
@@ -1621,6 +1690,15 @@ return;
                     : 'Click on sections in the grid to select them'
                   }
                 </p>
+                {getLecLabWarnings().length > 0 && (
+                  <div className="space-y-1">
+                    {getLecLabWarnings().map((warning) => (
+                      <p key={warning} className="text-xs text-orange-600">
+                        ⚠️ {warning}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {addedSections.size > 0 && (
                   <div className="flex flex-wrap gap-3">
                     {Array.from(getAddedCourses()).sort().map(courseCode => {

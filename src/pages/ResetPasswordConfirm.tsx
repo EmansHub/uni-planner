@@ -119,7 +119,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
               <button
                 type="button"
                 onClick={() => navigate('/login')}
-                className="text-blue-600 hover:underline"
+                className="text-foreground hover:underline"
               >
                 Back to Login
               </button>

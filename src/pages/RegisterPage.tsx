@@ -24,7 +24,7 @@ const generateEnrollmentSemesters = () => {
   for (let y = startYear - 4; y <= startYear; y++) {
     const nextYearShort = (y + 1).toString().slice(-2);
     semesters.push(`Fall ${y}/${nextYearShort}`);
-    semesters.push(`Spring ${y + 1}/${nextYearShort}`);
+    semesters.push(`Spring ${y}/${nextYearShort}`);
   }
 
   return semesters;
@@ -114,7 +114,7 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
         return;
       }
 
-      toast.success('Account created! Check your email if needed.');
+      toast.success('Account created! Check your email for verification.');
 
       onRegister({
         email,
@@ -291,7 +291,7 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               <button
                 type="button"
                 onClick={() => navigate('/login')}
-                className="text-blue-600 hover:underline font-medium"
+                className="text-foreground hover:underline font-medium"
               >
                 Login here
               </button>

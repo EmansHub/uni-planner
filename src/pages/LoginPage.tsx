@@ -163,7 +163,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <button
                 type="button"
                 onClick={() => navigate('/forgot-password')}
-                className="text-sm text-blue-600 hover:underline"
+                className="text-foreground hover:underline"
               >
                 Forgot Password?
               </button>
@@ -175,7 +175,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <button
                 type="button"
                 onClick={() => navigate('/register')}
-                className="text-blue-600 hover:underline font-medium"
+                className="text-foreground hover:underline font-medium"
               >
                 Register here
               </button>
