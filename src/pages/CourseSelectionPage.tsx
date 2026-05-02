@@ -51,6 +51,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [showTranscriptUpload, setShowTranscriptUpload] = useState(false);
   const [completedCourses, setCompletedCourses] = useState<Set<string>>(new Set());
+  const [curriculumTotalCredits, setCurriculumTotalCredits] = useState(0);
 
   const loadCourseSections = async () => {
   setLoadingCourses(true);
@@ -69,12 +70,20 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     const sectionMetaMap = new Map<string, { requiredCredits: number; displayOrder: number }>();
 
+    let dbTotalCredits = 0;
+
     (sectionMetaRows || []).forEach((row: any) => {
-    sectionMetaMap.set(row.course_category, {
-      requiredCredits: row.required_credits,
-      displayOrder: row.display_order ?? 99,
+      const requiredCredits = Number(row.required_credits || 0);
+
+      dbTotalCredits += requiredCredits;
+
+      sectionMetaMap.set(row.course_category, {
+        requiredCredits,
+        displayOrder: row.display_order ?? 99,
+      });
     });
-    });
+
+    setCurriculumTotalCredits(dbTotalCredits);
 
     const { data: sectionRows, error: sectionError } = await supabase
       .from('curriculum_section_courses')
@@ -146,8 +155,6 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       const builtSections: CourseSection[] = Array.from(grouped.entries()).map(
         ([title, courses]) => {
           const meta = sectionMetaMap.get(title);
-          const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0);
-
           const isElective =
             title.toLowerCase().includes('elective');
 
@@ -167,7 +174,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
             electiveNote,
             maxElectives,
             displayOrder: meta?.displayOrder ?? 99,
-            requiredCredits: meta?.requiredCredits ?? totalCredits,
+            requiredCredits: meta?.requiredCredits ?? 0,
           };
         }
       );
@@ -475,7 +482,6 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     });
   };
 
-  const totalCredits = courseSections.flatMap(s => s.courses).reduce((sum, c) => sum + c.credits, 0);
   const completedCredits = courseSections.reduce((sum, section) => {
     const selectedCourses = section.courses.filter(c => completedCourses.has(c.id));
     return sum + getCappedCredits(selectedCourses, section);
@@ -523,7 +529,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                   Mark the courses you've already completed and the ones you're currently taking
                 </p>
                   <p className="text-sm text-slate-500 mt-2">
-                    Total credits in curriculum: {totalCredits}
+                    Total credits in curriculum: {curriculumTotalCredits}
                   </p>
               </div>
               <Button
@@ -545,7 +551,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                   const sectionCurrent = section.courses.filter(c => currentCourses.has(c.id)).length;
                   const sectionTotal = section.courses.length;
                   const isExpanded = expandedSections.has(section.title);
-                  const sectionCredits = section.courses.reduce((sum, c) => sum + c.credits, 0);
+                  const sectionCredits = section.requiredCredits || 0;
 
                   return (
                     <div key={section.title}>
