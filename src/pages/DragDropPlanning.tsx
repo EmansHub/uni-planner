@@ -588,7 +588,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     let type = startType;
     let semesterYear = startYear;
 
-    while (generated.length < 14) {
+    while (generated.length < 8) {
       generated.push({
         id: `${type}-${semesterYear}`,
         name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${semesterYear}`,
@@ -1069,24 +1069,30 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if target semester would exceed max credits (use semester hours for the check)
-    if (targetSemester !== 'available') {
-      const targetSem = semesters.find(s => s.id === targetSemester);
-      if (targetSem) {
-        const currentHours = getSemesterHours(targetSem);
-        const courseHours = draggedCourse.isPrepCourse ? (draggedCourse.semesterHours || 0) : draggedCourse.credits;
-        const isNextSemester = semesters.indexOf(targetSem) === 0;
-        const maxCredits = getMaxCredits(targetSem, isNextSemester);
+      // Check if target semester would exceed max CREDITS
+      if (targetSemester !== 'available') {
+        const targetSem = semesters.find(s => s.id === targetSemester);
 
-        if (currentHours + courseHours > maxCredits) {
-          toast.error(`Cannot add course. This would exceed the ${maxCredits} hour limit for ${targetSem.name}.`);
-          setDraggedCourse(null);
-          setDraggedFromSemester(null);
-          setDragOverSemester(null);
-          return;
+        if (targetSem) {
+          const currentCredits = getTotalCredits(targetSem);
+          const courseCredits = draggedCourse.isPrepCourse ? 0 : draggedCourse.credits;
+
+          const sortedSemesters = [...semesters].sort(
+            (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
+          );
+
+          const isNextSemester = sortedSemesters[0]?.id === targetSem.id;
+          const maxCredits = getMaxCredits(targetSem, isNextSemester);
+
+          if (currentCredits + courseCredits > maxCredits) {
+            toast.error(`Cannot add course. This would exceed the ${maxCredits} credit limit for ${formatSemesterName(targetSem.id)}.`);
+            setDraggedCourse(null);
+            setDraggedFromSemester(null);
+            setDragOverSemester(null);
+            return;
+          }
         }
       }
-    }
 
     // Remove from source
     if (draggedFromSemester === 'available') {
@@ -2101,7 +2107,7 @@ if (internshipIndex !== -1) {
                 const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
                 const isNextSemester = sortedSemesters[0]?.id === semester.id;
                 const maxCredits = getMaxCredits(semester, isNextSemester);
-                const isOverloaded = semesterHours > maxCredits;
+                const isOverloaded = totalCredits > maxCredits;
 
                 return (
                   <Card key={semester.id} className={semester.isSummer ? 'border-amber-300 bg-amber-50/50' : ''}>
