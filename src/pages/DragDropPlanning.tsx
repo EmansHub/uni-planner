@@ -89,7 +89,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [originalElectiveToReplace, setOriginalElectiveToReplace] = useState<Course | null>(null);
   const [totalRequiredCredits, setTotalRequiredCredits] = useState(0);
   const [courseOfferingRules, setCourseOfferingRules] = useState<Record<string, string[]>>({});
-
+  
+  const getTotalCompletedCredits = () => {
+  return completedCourses.reduce((sum, course) => {
+    if (!course) return sum;
+    return sum + (course.credits || 0);
+  }, 0);
+};
+  
   const loadPlanFromSupabase = async (targetPlanId: string) => {
     const { data: planRow, error: planError } = await supabase
       .from('degree_plans')
@@ -461,21 +468,12 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getMaxCredits = (semester: Semester, isNextSemester: boolean = false) => {
-    // Summer semesters have max 9 credits
-    if (semester.isSummer) {
-      return 9;
-    }
-    // Overload applies to next semester only if enabled
-    return (isNextSemester && restrictions.hasOverload) ? 22 : 20;
-  };
+  if (semester.isSummer) {
+    return 9;
+  }
 
-  const getTotalCompletedCredits = () => {
-    // Only count regular courses (not prep courses)
-    return completedCourses.reduce((sum, course) => {
-      if (course.isPrepCourse) return sum;
-      return sum + course.credits;
-    }, 0);
-  };
+  return (isNextSemester && restrictions.hasOverload) ? 22 : 20;
+};
 
   const getHoursBeforeSemester = (targetSemesterId: string) => {
     // Calculate total hours (completed + planned) before a specific semester
@@ -1277,7 +1275,7 @@ if (internshipIndex !== -1) {
           : generatedPlans[currentPlanIndex];
 
       setSemesters(finalPlan);
-      
+
       setCoursesToTake([]);
       setShowAIDialog(false);
       setGeneratedPlans([]);
@@ -1535,33 +1533,75 @@ if (internshipIndex !== -1) {
     }
   };
 
-  const handleVerifyProof = () => {
-    if (!uploadedProofImage || !selectedOverrideCourse) return;
+  const handleVerifyProof = async () => {
+  if (!uploadedProofImage || !selectedOverrideCourse) return;
 
-    setIsVerifyingProof(true);
-    toast.info('AI is verifying your override proof...');
+  setIsVerifyingProof(true);
 
-    // Simulate AI verification (2 seconds)
-    setTimeout(() => {
-      // For prototype: accept all proofs
+  try {
+    const response = await fetch(uploadedProofImage);
+    const blob = await response.blob();
+
+    const formData = new FormData();
+    formData.append("file", blob, "override-proof.png");
+
+    const res = await fetch("http://127.0.0.1:5000/verify-override-proof", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    console.log("OVERRIDE VERIFY RESULT:", data);
+
+    const selectedCourseId = selectedOverrideCourse.id.replace(/\s+/g, "").toUpperCase();
+    const detectedCourseId = String(data.course_id || "").replace(/\s+/g, "").toUpperCase();
+
+    if (!data.approved || detectedCourseId !== selectedCourseId) {
+      toast.error("Override proof was not approved for this course.");
+      setIsVerifyingProof(false);
+      return;
+    }
+
+    setRestrictions(prev => ({
+      ...prev,
+      overrideCourses: [
+        ...prev.overrideCourses,
+        {
+          courseId: selectedOverrideCourse.id,
+          proofImage: uploadedProofImage,
+          verified: true
+        }
+      ]
+    }));
+
+    // NEW: handle overload approval
+    if (data.type === "overload" && data.approved) {
       setRestrictions(prev => ({
         ...prev,
-        overrideCourses: [
-          ...prev.overrideCourses,
-          {
-            courseId: selectedOverrideCourse.id,
-            proofImage: uploadedProofImage,
-            verified: true
-          }
-        ]
+        hasOverload: true
       }));
-      toast.success(`Override approved for ${selectedOverrideCourse.code}! You can now take this course without completing prerequisites.`);
+
+      toast.success("Overload approved! You can now take up to 22 credits.");
+
       setShowOverrideUploadDialog(false);
-      setSelectedOverrideCourse(null);
       setUploadedProofImage(null);
       setIsVerifyingProof(false);
-    }, 2000);
-  };
+      return;
+    }
+
+    toast.success(`Override approved for ${selectedOverrideCourse.code}!`);
+    setShowOverrideUploadDialog(false);
+    setSelectedOverrideCourse(null);
+    setUploadedProofImage(null);
+    setIsVerifyingProof(false);
+
+  } catch (error) {
+    console.error("Override verification error:", error);
+    toast.error("Failed to verify override proof");
+    setIsVerifyingProof(false);
+  }
+};
 
   const removeOverrideCourse = (courseId: string) => {
     setRestrictions(prev => ({
@@ -1660,9 +1700,8 @@ if (internshipIndex !== -1) {
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="overload-checkbox"
-                        checked={restrictions.hasOverload}
                         onCheckedChange={(checked) =>
-                          setRestrictions(prev => ({ ...prev, hasOverload: checked as boolean }))
+                        setRestrictions(prev => ({ ...prev, hasOverload: checked as boolean }))
                         }
                       />
                       <Label htmlFor="overload-checkbox" className="cursor-pointer">
