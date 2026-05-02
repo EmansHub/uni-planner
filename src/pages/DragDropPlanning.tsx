@@ -90,6 +90,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [totalRequiredCredits, setTotalRequiredCredits] = useState(0);
   const [courseOfferingRules, setCourseOfferingRules] = useState<Record<string, string[]>>({});
   const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
 
   const getCourseElectiveCategory = (course: Course) => {
   if (course.electiveCategory) return course.electiveCategory;
@@ -1676,6 +1677,18 @@ if (internshipIndex !== -1) {
     }
   };
 
+  const filteredCoursesToTake = coursesToTake.filter((course) => {
+    const query = courseSearchQuery.toLowerCase().trim();
+
+    if (!query) return true;
+
+    return (
+      course.code.toLowerCase().includes(query) ||
+      course.name.toLowerCase().includes(query) ||
+      course.id.toLowerCase().includes(query)
+    );
+  });
+
   if (loadingPlan) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4 flex items-center justify-center">
@@ -2404,9 +2417,18 @@ if (internshipIndex !== -1) {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 Courses to Take
-                <Badge variant="secondary">{coursesToTake.length} courses</Badge>
+                <Badge variant="secondary">{filteredCoursesToTake.length} / {coursesToTake.length} courses</Badge>
               </CardTitle>
+
               <p className="text-sm text-slate-600">Drag courses to semester boxes</p>
+
+              <Input
+                type="text"
+                placeholder="Search courses..."
+                value={courseSearchQuery}
+                onChange={(e) => setCourseSearchQuery(e.target.value)}
+                className="mt-2"
+              />
             </CardHeader>
             <CardContent>
               <div
@@ -2422,7 +2444,7 @@ if (internshipIndex !== -1) {
                   handleDrop('available');
                 }}
               >
-                {coursesToTake.map(course => {
+                {filteredCoursesToTake.map(course => {
                   const isRepeatCourse = restrictions.repeatCourseIds.includes(course.id);
                   const isElectivePlaceholder = course.isElectiveOption;
 
@@ -2514,6 +2536,12 @@ if (internshipIndex !== -1) {
                 {coursesToTake.length === 0 && (
                   <div className="text-center text-slate-400 py-8 pointer-events-none">
                     <p className="text-sm">All courses planned!</p>
+                  </div>
+                )}
+
+                {coursesToTake.length > 0 && filteredCoursesToTake.length === 0 && (
+                  <div className="text-center text-slate-400 py-8 pointer-events-none">
+                    <p className="text-sm">No courses match your search</p>
                   </div>
                 )}
               </div>
