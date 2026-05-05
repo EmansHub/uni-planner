@@ -91,6 +91,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [courseOfferingRules, setCourseOfferingRules] = useState<Record<string, string[]>>({});
   const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  const [aiPlanWarnings, setAiPlanWarnings] = useState<string[]>([]);
 
   const getCourseElectiveCategory = (course: Course) => {
   if (course.electiveCategory) return course.electiveCategory;
@@ -644,7 +645,7 @@ const getCappedDegreeCredits = (
     let type = startType;
     let semesterYear = startYear;
 
-    while (generated.length < 8) {
+    while (generated.length < 12) {
       generated.push({
         id: `${type}-${semesterYear}`,
         name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${semesterYear}`,
@@ -1200,6 +1201,8 @@ const handleGeneratePlan = async () => {
     const data = await response.json();
 
     console.log("Backend degree plan result:", data);
+
+    setAiPlanWarnings(data.warnings || []);
 
     if (!data.plan || data.plan.length === 0) {
       toast.error(data.message || "No degree plan generated.");
@@ -2111,6 +2114,9 @@ if (internshipIndex !== -1) {
                       <div className="border rounded-lg p-4 bg-slate-50 space-y-3 max-h-96 overflow-y-auto">
                         <p className="text-xs text-slate-500">
                           Preferences: {aiPrompt || "None"}
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                            Note: Max academic years in PMU is 6 years total.
+                          </p>
                         </p>
 
                         {generatedPlans[currentPlanIndex].map(semester => (
@@ -2197,6 +2203,16 @@ if (internshipIndex !== -1) {
               <CardHeader className="py-6">
                 <div className="flex items-center justify-between">
                   <CardTitle>Plan Overview</CardTitle>
+                  {aiPlanWarnings.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {aiPlanWarnings.map((warning, index) => (
+                      
+                        <p key={index} className="text-xs text-red-600 leading-tight">
+                        ⚠️ {warning}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Badge variant="outline">{getTotalCompletedCredits()} completed</Badge>
                     <Badge variant="outline">{getTotalPlannedCredits()} planned</Badge>

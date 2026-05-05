@@ -705,6 +705,26 @@ def compact_degree_plan(semesters, course_info, max_credits, summer_max_credits=
 
     return semesters
 
+def get_course_offering_rules():
+        response = (
+            supabase.table("course_offering_rules")
+            .select("course_id, term")
+            .execute()
+        )
+
+        rules = {}
+
+        for row in response.data or []:
+            course_id = row["course_id"].replace(" ", "").upper()
+            term = row["term"]
+
+            if course_id not in rules:
+                rules[course_id] = []
+
+            rules[course_id].append(term)
+
+        return rules
+
 
 @app.route('/generate-degree-plan', methods=['POST'])
 def generate_degree_plan():
@@ -718,6 +738,9 @@ def generate_degree_plan():
         MAX_CREDITS = get_max_credits_from_preferences(preferences)
         include_summer = should_include_summer(preferences)
         SUMMER_MAX_CREDITS = 9
+        MAX_PLAN_YEARS = 6
+        MAX_PLAN_TERMS = MAX_PLAN_YEARS * (3 if include_summer else 2)
+        generation_warnings = []
 
         if not degree_program_code:
             return jsonify({"error": "degree_program_code is required"}), 400
@@ -827,47 +850,128 @@ def generate_degree_plan():
         )
 
         prereq_map = get_prerequisites()
+        offering_rules = get_course_offering_rules()
 
         semesters = []
         taken = set(blocked_set)
-        
-        semester_index = 0
 
-        while remaining_courses:
+        semester_index = 0
+        skipped_terms = 0
+        max_skipped_terms = 12
+
+        while remaining_courses and semester_index < MAX_PLAN_TERMS:
             semester_courses = []
             semester_credits = 0
-            
-            if include_summer and semester_index % 3 == 2:
-                current_max = SUMMER_MAX_CREDITS   # summer
+
+            # Correct term cycle
+            if include_summer:
+                term_cycle = ["fall", "spring", "summer"]
+                current_term = term_cycle[semester_index % 3]
             else:
-                current_max = MAX_CREDITS          # fall/spring
+                term_cycle = ["fall", "spring"]
+                current_term = term_cycle[semester_index % 2]
+
+            current_max = SUMMER_MAX_CREDITS if current_term == "summer" else MAX_CREDITS
 
             for course in remaining_courses[:]:
+                
+                # Check course offering term from DB
+                allowed_terms = offering_rules.get(course, [])
+
+                if allowed_terms and current_term not in allowed_terms:
+                    continue
+
+                # Check prerequisites from DB
                 prereqs = prereq_map.get(course, [])
 
-                if all(pr in taken for pr in prereqs):
+                if not all(pr in taken for pr in prereqs):
+                    continue
+
+                credits = course_info[course]["credits"]
+
+                if semester_credits + credits <= current_max:
+                    semester_courses.append(course)
+                    semester_credits += credits
+
+                if semester_credits >= current_max:
+                    break
+
+            # IMPORTANT:
+            # If no courses fit this term, do NOT fail immediately.
+            # Just move to the next term and try again.
+            if not semester_courses:
+                semester_index += 1
+                skipped_terms += 1
+
+            if skipped_terms >= max_skipped_terms:
+                semester_courses = []
+                semester_credits = 0
+                
+                current_max = SUMMER_MAX_CREDITS if current_term == "summer" else MAX_CREDITS
+                
+                # Fallback mode:
+                # If offering rules block the plan forever, relax offering rules.
+                # Still keep prerequisites and credit limits.
+                for course in remaining_courses[:]:
+                    prereqs = prereq_map.get(course, [])
+
+                    if not all(pr in taken for pr in prereqs):
+                        continue
+
                     credits = course_info[course]["credits"]
 
                     if semester_credits + credits <= current_max:
                         semester_courses.append(course)
                         semester_credits += credits
 
-                if semester_credits >= current_max:
-                    break
+                    if semester_credits >= current_max:
+                        break
 
-            if not semester_courses:
-                return jsonify({
-                    "message": "Could not build full plan due to missing prerequisites.",
-                    "remaining_courses": remaining_courses
-                })
+                # If fallback placed courses, continue normally
+                if not semester_courses:
+                    course = remaining_courses[0]
+                    semester_courses.append(course)
+                    
+                skipped_terms = 0
 
             semesters.append(semester_courses)
 
             for c in semester_courses:
                 taken.add(c)
                 remaining_courses.remove(c)
-                
+
             semester_index += 1
+            
+        if remaining_courses:
+            generation_warnings.append(
+                "Max PMU plan length: 6 years."
+            )
+
+            for course in remaining_courses[:]:
+                placed = False
+                credits = course_info[course]["credits"]
+
+                # Try to place inside existing semesters without creating a 7th year
+                for i in range(len(semesters) - 1, -1, -1):
+                    is_summer = include_summer and i % 3 == 2
+                    max_allowed = SUMMER_MAX_CREDITS if is_summer else MAX_CREDITS
+
+                    current_credits = sum(course_info[c]["credits"] for c in semesters[i])
+
+                    if current_credits + credits <= max_allowed:
+                        semesters[i].append(course)
+                        placed = True
+                        break
+
+                # Last rescue: force into last semester, but warn user
+                if not placed and semesters:
+                    semesters[-1].append(course)
+                    generation_warnings.append(
+                        "Please review the generated plan with your advisor."
+                    )
+
+                remaining_courses.remove(course)
+                
             
         for senior_project in senior_project_courses:
             if senior_project not in completed_set:
@@ -888,14 +992,25 @@ def generate_degree_plan():
                     placed = True
                     break
 
-        # if it does not fit anywhere, add a new normal semester
             if not placed:
-                semesters.append([senior_project])
-
+                if len(semesters) < MAX_PLAN_TERMS:
+                    semesters.append([senior_project])
+                    
+                else:
+                    semesters[-1].append(senior_project)
+                    generation_warnings.append(
+                        f"{senior_project} was added within the 6-year maximum, but the last semester may be heavy."
+                )              
+                    
         for internship in internship_courses:
             if internship not in completed_set:
-                semesters.append([internship])    
-                
+                if len(semesters) < MAX_PLAN_TERMS:
+                    semesters.append([internship])    
+                else:
+                    semesters[-1].append(internship)
+                    generation_warnings.append(
+                        "Internship placed within the 6-year limit. Review final load."
+                    ) 
     
         semesters = compact_degree_plan(
             semesters,
@@ -908,6 +1023,9 @@ def generate_degree_plan():
         return jsonify({
             "message": "Degree plan generated",
             "total_semesters": len(semesters),
+            "max_years": MAX_PLAN_YEARS,
+            "max_terms": MAX_PLAN_TERMS,
+            "warnings": generation_warnings,
             "plan": semesters
         })
 
