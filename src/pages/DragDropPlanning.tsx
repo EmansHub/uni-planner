@@ -445,35 +445,7 @@ const getCappedDegreeCredits = (
           !currentCourseIds.includes(course.id)
       );
 
-      const wantsSummer =
-        aiPrompt.toLowerCase().includes("summer") ||
-        aiPrompt.toLowerCase().includes("fast") ||
-        aiPrompt.toLowerCase().includes("graduate faster");
-
-      let defaultSemesters = generateDefaultSemesters();
-
-      if (wantsSummer) {
-        const withSummer: Semester[] = [];
-
-        defaultSemesters.forEach((semester, index) => {
-          withSummer.push(semester);
-
-        // add summer after every 2 semesters
-        if (index % 2 === 1) {
-          const year = semester.id.split("-")[1];
-
-          withSummer.push({
-            id: `summer-${year}`,
-            name: `Summer ${year}`,
-            completed: false,
-            isSummer: true,
-            courses: [],
-          });
-        }
-      });
-
-      defaultSemesters = withSummer;
-    }
+      const defaultSemesters = generateDefaultSemesters();
 
       const firstSemesterId = defaultSemesters[0]?.id;
 
@@ -1185,7 +1157,65 @@ const handleGeneratePlan = async () => {
   try {
     toast.info('AI is generating degree plan...');
 
-    const response = await fetch("http://127.0.0.1:5000/generate-degree-plan", {
+const promptLower = aiPrompt.toLowerCase();
+
+const explicitlyNoSummer =
+  promptLower.includes("no summer") ||
+  promptLower.includes("without summer") ||
+  promptLower.includes("do not include summer") ||
+  promptLower.includes("don't include summer") ||
+  promptLower.includes("dont include summer");
+
+const wantsSummerForAI =
+  !explicitlyNoSummer &&
+  (
+    promptLower.includes("summer") ||
+    promptLower.includes("fast") ||
+    promptLower.includes("graduate faster")
+  );
+
+const buildPlanningSlotsForAI = (includeSummer: boolean): Semester[] => {
+  const baseSemesters = generateDefaultSemesters();
+
+  const hasCurrentCourses = semesters[0]?.courses.length > 0;
+  const slots = hasCurrentCourses ? baseSemesters.slice(1) : baseSemesters;
+
+  if (!includeSummer) {
+    return slots.filter(
+      (semester) =>
+        !semester.isSummer &&
+        !semester.id.startsWith("summer-")
+    );
+  }
+
+  const withSummer: Semester[] = [];
+
+  slots.forEach((semester) => {
+    if (semester.isSummer || semester.id.startsWith("summer-")) {
+      return;
+    }
+
+    withSummer.push(semester);
+
+    if (semester.id.startsWith("spring-")) {
+      const year = semester.id.split("-")[1];
+
+      withSummer.push({
+        id: `summer-${year}`,
+        name: `Summer ${year}`,
+        completed: false,
+        isSummer: true,
+        courses: [],
+      });
+    }
+  });
+
+  return withSummer;
+};
+
+const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
+      
+   const response = await fetch("http://127.0.0.1:5000/generate-degree-plan", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1195,6 +1225,15 @@ const handleGeneratePlan = async () => {
         completed_courses: completedCourses.map((course) => course.id),
         current_courses: semesters[0]?.courses.map((course) => course.id) || [],
         preferences: aiPrompt,
+        include_summer: wantsSummerForAI,
+        semester_slots: aiSemesterSlots.map((semester) => ({
+        id: semester.id,
+        term: semester.isSummer
+          ? "summer"
+          : semester.id.startsWith("fall-")
+            ? "fall"
+            : "spring",
+        })),
       }),
     });
 
@@ -1222,97 +1261,33 @@ const handleGeneratePlan = async () => {
       courseMap.set(course.id.replace(/\s+/g, '').toUpperCase(), course);
     });
 
-    const wantsSummer =
-      aiPrompt.toLowerCase().includes("summer") ||
-      aiPrompt.toLowerCase().includes("fast") ||
-      aiPrompt.toLowerCase().includes("graduate faster");
-
-    let defaultSemesters = generateDefaultSemesters();
-
-    const hasCurrentCourses = semesters[0]?.courses.length > 0;
-
-    if (hasCurrentCourses) {
-      defaultSemesters = defaultSemesters.slice(1);
-    }
-
-    if (wantsSummer) {
-      const withSummer: Semester[] = [];
-
-      defaultSemesters.forEach((semester, index) => {
-        withSummer.push(semester);
-
-        if (index % 2 === 1) {
-          withSummer.push({
-            id: `summer-${index}`,
-            name: `Summer`,
-            completed: false,
-            isSummer: true,
-            courses: [],
-          });
-        }
-      });
-
-      defaultSemesters = withSummer;
-    }
+    const defaultSemesters = aiSemesterSlots.slice(0, data.plan.length);
 
     const backendPlan = data.plan.map((semesterCourseIds: string[], index: number) => {
-      let baseSemester =
+      const baseSemester =
         defaultSemesters[index] || {
-        id: `generated-${index + 1}`,
-        name: `Semester ${index + 1}`,
-        completed: false,
-        isSummer: false,
-        courses: [],
-      };
+          id: `generated-${index + 1}`,
+          name: `Semester ${index + 1}`,
+          completed: false,
+          isSummer: false,
+          courses: [],
+        };
 
-    const courses = semesterCourseIds
-      .map((courseId) =>
-        courseMap.get(courseId.replace(/\s+/g, '').toUpperCase())
-      )
-      .filter(Boolean);
+      const courses = semesterCourseIds
+        .map((courseId) =>
+          courseMap.get(courseId.replace(/\s+/g, '').toUpperCase())
+        )
+        .filter(Boolean) as Course[];
 
-    //force internship to be summer
-    if (
-      courses.length === 1 &&
-      courses[0]?.name?.toLowerCase().includes("internship")
-    ) {
-      baseSemester = {
+      return {
         ...baseSemester,
-        name: "Summer",
-        isSummer: true,
+        courses,
       };
-    }
+    });
 
-    return {
-      ...baseSemester,
-      courses,
-    };
-  });
+    const finalPlan = backendPlan;
 
-  //move internship to summer slot
-let finalPlan = [...backendPlan];
-
-const internshipIndex = finalPlan.findIndex(
-  (sem) =>
-    sem.courses.length === 1 &&
-    sem.courses[0]?.name?.toLowerCase().includes("internship")
-);
-
-if (internshipIndex !== -1) {
-  const internshipSemester = finalPlan[internshipIndex];
-
-  // remove it from current position
-  finalPlan.splice(internshipIndex, 1);
-
-  // insert at summer position (after last spring)
-  finalPlan.push({
-    ...internshipSemester,
-    name: "Summer",
-    isSummer: true,
-  });
-}
-
-  const cleanedPlan = finalPlan.filter(
+    const cleanedPlan = finalPlan.filter(
       (sem) => sem.courses.length > 0
     );
 
@@ -1320,7 +1295,7 @@ if (internshipIndex !== -1) {
     setCurrentPlanIndex(0);
     toast.success("AI degree plan generated!");
 
-    } catch (error) {
+  } catch (error) {
     console.error("AI degree plan error:", error);
     toast.error("Failed to generate degree plan.");
   }

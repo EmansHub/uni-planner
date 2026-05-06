@@ -501,7 +501,11 @@ def get_required_courses_for_program(degree_program_code):
             courses (
                 id,
                 name,
-                credits
+                credits,
+                semester_hours,
+                semester_hours,
+                required_hours,
+                must_be_alone
             )
         """)
         .eq("degree_program_code", degree_program_code)
@@ -548,6 +552,13 @@ def generate_schedule():
 
         course_ids = data.get("course_ids", [])
         preferences = data.get("preferences", "")
+        semester_slots = data.get("semester_slots", [])
+        
+        if "include_summer" in data and not bool(data.get("include_summer")):
+            semester_slots = [
+                slot for slot in semester_slots
+                if slot.get("term") != "summer"
+            ]
 
         if not course_ids:
             return jsonify({"error": "course_ids is required"}), 400
@@ -735,11 +746,19 @@ def generate_degree_plan():
         completed_courses = data.get("completed_courses", [])
         current_courses = data.get("current_courses", [])
         preferences = data.get("preferences", "")
+        semester_slots = data.get("semester_slots", [])
+
         MAX_CREDITS = get_max_credits_from_preferences(preferences)
-        include_summer = should_include_summer(preferences)
+        
+        if "include_summer" in data:
+            include_summer = bool(data.get("include_summer"))
+        else:
+            include_summer = should_include_summer(preferences)   
+             
         SUMMER_MAX_CREDITS = 9
         MAX_PLAN_YEARS = 6
-        MAX_PLAN_TERMS = MAX_PLAN_YEARS * (3 if include_summer else 2)
+        MAX_PLAN_TERMS = len(semester_slots) if semester_slots else MAX_PLAN_YEARS * (3 if include_summer else 2)
+
         generation_warnings = []
 
         if not degree_program_code:
@@ -758,61 +777,23 @@ def generate_degree_plan():
                 "id": course_id,
                 "name": course_data.get("name", ""),
                 "credits": course_data.get("credits", 3),
+                "semester_hours": course_data.get("semester_hours"),
+                "required_hours": course_data.get("required_hours"),
+                "must_be_alone": course_data.get("must_be_alone", False),
                 "category": row.get("course_category", "")
             }
 
             required_course_ids.append(course_id)
-            
-        
-        internship_courses = []
 
-        for course_id, info in course_info.items():
-            name = info["name"].lower()
-
-            if "internship" in name:
-                internship_courses.append(course_id)
-                
-        
-        senior_project_courses = []
-
-        for course_id, info in course_info.items():
-            name = info["name"].lower()
-
-            if "senior project" in name or "capstone" in name:
-                senior_project_courses.append(course_id)        
-            
+        prereq_map = get_prerequisites()
+        offering_rules = get_course_offering_rules()
         required_credits_by_category = get_curriculum_required_credits(degree_program_code)
-
-        selected_required_courses = []
-        category_credit_count = {}
-
-        for course_id in required_course_ids:
-            category = course_info[course_id]["category"]
-            credits = course_info[course_id]["credits"]
-
-            if category not in category_credit_count:
-                category_credit_count[category] = 0
-
-            required_credits = required_credits_by_category.get(category)
-
-            # If no required limit exists, keep the course
-            if required_credits is None:
-                selected_required_courses.append(course_id)
-                continue
-
-            # For elective categories, only take enough credits
-            if "Elective" in category:
-                if category_credit_count[category] < required_credits:
-                    selected_required_courses.append(course_id)
-                    category_credit_count[category] += credits
-            else:
-                selected_required_courses.append(course_id)    
 
         completed_set = set([
             c.replace(" ", "").upper()
             for c in completed_courses
         ])
-        
+
         current_set = set([
             c.replace(" ", "").upper()
             for c in current_courses
@@ -820,37 +801,198 @@ def generate_degree_plan():
 
         blocked_set = completed_set.union(current_set)
 
-        remaining_courses = [
-            c for c in selected_required_courses
-            if c not in blocked_set
-        ]
-        
-        for internship in internship_courses:
-            if internship in remaining_courses:
-                remaining_courses.remove(internship)
-                
-        for senior_project in senior_project_courses:
-            if senior_project in remaining_courses:
-                remaining_courses.remove(senior_project)        
-        
+        internship_courses = []
+        senior_project_courses = []
 
-        def get_priority(category):
-            order = {
+        for course_id, info in course_info.items():
+            name = info["name"].lower()
+
+            if "internship" in name:
+                internship_courses.append(course_id)
+
+            if "senior project" in name or "capstone" in name:
+                senior_project_courses.append(course_id)
+
+        selected_required_courses = []
+        category_credit_count = {}
+
+        # Count completed/current elective credits first.
+        for course_id in required_course_ids:
+            category = course_info[course_id]["category"]
+            credits = course_info[course_id]["credits"]
+
+            if "Elective" in category and course_id in blocked_set:
+                category_credit_count[category] = category_credit_count.get(category, 0) + credits
+
+        # Select only enough electives based on DB required credits.
+        for course_id in required_course_ids:
+            if course_id in blocked_set:
+                continue
+
+            category = course_info[course_id]["category"]
+            credits = course_info[course_id]["credits"]
+            required_credits = required_credits_by_category.get(category)
+
+            if required_credits is None:
+                selected_required_courses.append(course_id)
+                continue
+
+            if "Elective" in category:
+                current_category_credits = category_credit_count.get(category, 0)
+
+                if current_category_credits < required_credits:
+                    selected_required_courses.append(course_id)
+                    category_credit_count[category] = current_category_credits + credits
+            else:
+                selected_required_courses.append(course_id)
+
+        special_course_ids = set(internship_courses + senior_project_courses)
+
+        remaining_courses = [
+            course_id for course_id in selected_required_courses
+            if course_id not in special_course_ids
+        ]
+
+        def get_term_for_index(index):
+            if semester_slots and index < len(semester_slots):
+                return semester_slots[index].get("term")
+
+            if include_summer:
+                term_cycle = ["fall", "spring", "summer"]
+                return term_cycle[index % 3]
+
+            term_cycle = ["fall", "spring"]
+            return term_cycle[index % 2]
+
+        def get_course_required_hours(course_id):
+            if course_id == "ASSE2111":
+                return 30
+
+            return course_info[course_id].get("required_hours") or 0
+
+        def get_semester_credit_limit(term):
+            if term == "summer":
+                return SUMMER_MAX_CREDITS
+
+            return MAX_CREDITS
+
+        def get_taken_credits(taken_course_ids):
+            total = 0
+
+            for course_id in taken_course_ids:
+                info = course_info.get(course_id)
+
+                if not info:
+                    continue
+
+                total += info.get("credits", 0) or 0
+
+            return total
+
+        def get_semester_credits(course_ids):
+            return sum(
+                course_info[c].get("credits", 0) or 0
+                for c in course_ids
+            )
+
+        def can_place_course(course_id, semester_courses, term, taken_course_ids):
+            allowed_terms = offering_rules.get(course_id, [])
+
+            if allowed_terms and term not in allowed_terms:
+                return False
+
+            prereqs = prereq_map.get(course_id, [])
+
+            if not all(pr in taken_course_ids for pr in prereqs):
+                return False
+
+            credits_before = get_taken_credits(taken_course_ids)
+            required_hours = get_course_required_hours(course_id)
+
+            if required_hours and credits_before < required_hours:
+                return False
+
+            # Major electives should start around junior year, not freshman/sophomore.
+            if course_info[course_id]["category"] == "Major Electives" and credits_before < 60:
+                return False
+            
+            # Prefer not to place more than one Social Science Elective in the same semester
+            if course_info[course_id]["category"] == "Social Science Electives":
+                has_social_elective = any(
+                    course_info[existing_course]["category"] == "Social Science Electives"
+                    for existing_course in semester_courses
+                )
+
+                if has_social_elective:
+                    return False
+            
+
+            course_must_be_alone = course_info[course_id].get("must_be_alone", False)
+
+            if course_must_be_alone and len(semester_courses) > 0:
+                return False
+
+            for existing_course in semester_courses:
+                if course_info[existing_course].get("must_be_alone", False):
+                    return False
+
+            current_credits = get_semester_credits(semester_courses)
+            course_credits = course_info[course_id].get("credits", 0) or 0
+            max_credits = get_semester_credit_limit(term)
+
+            if current_credits + course_credits > max_credits:
+                return False
+
+            return True
+
+        def get_course_level(course_id):
+            match = re.search(r'(\d{4})', course_id)
+
+            if not match:
+                return 9
+
+            number = int(match.group(1))
+
+            if number < 2000:
+                return 1
+            if number < 3000:
+                return 2
+            if number < 4000:
+                return 3
+
+            return 4
+
+
+        def get_priority(course_id):
+            category = course_info[course_id]["category"]
+            required_hours = course_info[course_id].get("required_hours") or 0
+            course_level = get_course_level(course_id)
+
+            unlock_count = sum(
+                1 for course, prereqs in prereq_map.items()
+                if course_id in prereqs
+            )
+
+            category_order = {
                 "Preparation Program": 1,
                 "Core Curriculum": 2,
                 "Degree Specific Core": 3,
-                "College Core": 4,
-                "Major Core": 5,
-                "Major Electives": 6,
+                "Natural Science Electives": 4,
+                "College Core": 5,
+                "Social Science Electives": 6,
+                "Major Core": 7,
+                "Major Electives": 8,
             }
-            return order.get(category, 10)
 
-        remaining_courses.sort(
-            key=lambda c: get_priority(course_info[c]["category"])
-        )
+            return (
+                course_level,
+                category_order.get(category, 10),
+                required_hours,
+                -unlock_count,
+                course_info[course_id]["credits"]
+            )
 
-        prereq_map = get_prerequisites()
-        offering_rules = get_course_offering_rules()
+        remaining_courses.sort(key=get_priority)
 
         semesters = []
         taken = set(blocked_set)
@@ -861,79 +1003,48 @@ def generate_degree_plan():
 
         while remaining_courses and semester_index < MAX_PLAN_TERMS:
             semester_courses = []
-            semester_credits = 0
+            current_term = get_term_for_index(semester_index)
 
-            # Correct term cycle
-            if include_summer:
-                term_cycle = ["fall", "spring", "summer"]
-                current_term = term_cycle[semester_index % 3]
-            else:
-                term_cycle = ["fall", "spring"]
-                current_term = term_cycle[semester_index % 2]
-
-            current_max = SUMMER_MAX_CREDITS if current_term == "summer" else MAX_CREDITS
-
+            eligible_courses = []
+            
             for course in remaining_courses[:]:
-                
-                # Check course offering term from DB
-                allowed_terms = offering_rules.get(course, [])
+                if can_place_course(
+                    course_id=course,
+                    semester_courses=semester_courses,
+                    term=current_term,
+                    taken_course_ids=taken
+                ):
+                    eligible_courses.append(course)
+                    
+            eligible_courses.sort(
+                key=lambda course: (
+                    -sum(1 for future_course, prereqs in prereq_map.items() if course in prereqs),
+                    -course_info[course].get("credits", 0)
+                )
+            )
+            
+            for course in eligible_courses:
+                if can_place_course(
+                    course_id=course,
+                    semester_courses=semester_courses,
+                    term=current_term,
+                    taken_course_ids=taken
+                ):
+                    semester_courses.append(course)        
 
-                if allowed_terms and current_term not in allowed_terms:
-                    continue
-
-                # Check prerequisites from DB
-                prereqs = prereq_map.get(course, [])
-
-                if not all(pr in taken for pr in prereqs):
-                    continue
-
-                credits = course_info[course]["credits"]
-
-                if semester_credits + credits <= current_max:
-                    semester_courses.append(course)
-                    semester_credits += credits
-
-                if semester_credits >= current_max:
-                    break
-
-            # IMPORTANT:
-            # If no courses fit this term, do NOT fail immediately.
-            # Just move to the next term and try again.
             if not semester_courses:
                 semester_index += 1
                 skipped_terms += 1
 
-            if skipped_terms >= max_skipped_terms:
-                semester_courses = []
-                semester_credits = 0
-                
-                current_max = SUMMER_MAX_CREDITS if current_term == "summer" else MAX_CREDITS
-                
-                # Fallback mode:
-                # If offering rules block the plan forever, relax offering rules.
-                # Still keep prerequisites and credit limits.
-                for course in remaining_courses[:]:
-                    prereqs = prereq_map.get(course, [])
+                if skipped_terms >= max_skipped_terms:
+                    generation_warnings.append(
+                        "Some courses need advisor review because they could not fit while following DB rules."
+                    )
+                    break
 
-                    if not all(pr in taken for pr in prereqs):
-                        continue
+                continue
 
-                    credits = course_info[course]["credits"]
-
-                    if semester_credits + credits <= current_max:
-                        semester_courses.append(course)
-                        semester_credits += credits
-
-                    if semester_credits >= current_max:
-                        break
-
-                # If fallback placed courses, continue normally
-                if not semester_courses:
-                    course = remaining_courses[0]
-                    semester_courses.append(course)
-                    
-                skipped_terms = 0
-
+            skipped_terms = 0
             semesters.append(semester_courses)
 
             for c in semester_courses:
@@ -941,85 +1052,92 @@ def generate_degree_plan():
                 remaining_courses.remove(c)
 
             semester_index += 1
-            
+
         if remaining_courses:
             generation_warnings.append(
-                "Max PMU plan length: 6 years."
+                "Some courses could not be placed within the 6-year limit while following all DB rules."
             )
 
-            for course in remaining_courses[:]:
-                placed = False
-                credits = course_info[course]["credits"]
-
-                # Try to place inside existing semesters without creating a 7th year
-                for i in range(len(semesters) - 1, -1, -1):
-                    is_summer = include_summer and i % 3 == 2
-                    max_allowed = SUMMER_MAX_CREDITS if is_summer else MAX_CREDITS
-
-                    current_credits = sum(course_info[c]["credits"] for c in semesters[i])
-
-                    if current_credits + credits <= max_allowed:
-                        semesters[i].append(course)
-                        placed = True
-                        break
-
-                # Last rescue: force into last semester, but warn user
-                if not placed and semesters:
-                    semesters[-1].append(course)
-                    generation_warnings.append(
-                        "Please review the generated plan with your advisor."
-                    )
-
-                remaining_courses.remove(course)
-                
-            
+        # Place senior project once, after normal courses, following DB rules.
         for senior_project in senior_project_courses:
-            if senior_project not in completed_set:
-                credits = course_info[senior_project]["credits"]
-                placed = False
+            if senior_project in completed_set:
+                continue
 
-        # try to place in the latest non-summer semester
+            if senior_project not in course_info:
+                continue
+
+            already_planned = any(
+                senior_project in semester
+                for semester in semesters
+            )
+
+            if already_planned:
+                continue
+
+            placed = False
+
             for i in range(len(semesters) - 1, -1, -1):
-                is_summer = include_summer and i % 3 == 2
+                term = get_term_for_index(i)
+                taken_before = set(blocked_set).union(
+                    set(c for sem in semesters[:i] for c in sem)
+                )
 
-                if is_summer:
-                    continue
-
-                current_credits = sum(course_info[c]["credits"] for c in semesters[i])
-
-                if current_credits + credits <= MAX_CREDITS:
+                if can_place_course(
+                    course_id=senior_project,
+                    semester_courses=semesters[i],
+                    term=term,
+                    taken_course_ids=taken_before
+                ):
                     semesters[i].append(senior_project)
                     placed = True
                     break
 
             if not placed:
-                if len(semesters) < MAX_PLAN_TERMS:
-                    semesters.append([senior_project])
-                    
-                else:
-                    semesters[-1].append(senior_project)
-                    generation_warnings.append(
-                        f"{senior_project} was added within the 6-year maximum, but the last semester may be heavy."
-                )              
-                    
+                generation_warnings.append(
+                    f"{senior_project} could not be placed while following DB rules."
+                )
+
+        # Place internship once, after the final academic semester.
         for internship in internship_courses:
-            if internship not in completed_set:
-                if len(semesters) < MAX_PLAN_TERMS:
-                    semesters.append([internship])    
-                else:
-                    semesters[-1].append(internship)
-                    generation_warnings.append(
-                        "Internship placed within the 6-year limit. Review final load."
-                    ) 
-    
-        semesters = compact_degree_plan(
-            semesters,
-            course_info,
-            MAX_CREDITS,
-            SUMMER_MAX_CREDITS,
-            include_summer
-        )
-        
+            if internship in completed_set:
+                continue
+
+            if internship not in course_info:
+                continue
+
+            already_planned = any(
+                internship in semester
+                for semester in semesters
+            )
+
+            if already_planned:
+                continue
+
+            placed = False
+
+            # Add internship after the last semester if there is room in the 6-year limit.
+            if len(semesters) < MAX_PLAN_TERMS:
+                next_index = len(semesters)
+                next_term = get_term_for_index(next_index)
+
+                taken_before = set(blocked_set).union(
+                    set(c for sem in semesters for c in sem)
+                )
+
+                if can_place_course(
+                    course_id=internship,
+                    semester_courses=[],
+                    term=next_term,
+                    taken_course_ids=taken_before
+                ):
+                    semesters.append([internship])
+                    placed = True
+
+            if not placed:
+                generation_warnings.append(
+                    "Internship could not be placed while following DB rules."
+                )
+
         return jsonify({
             "message": "Degree plan generated",
             "total_semesters": len(semesters),
