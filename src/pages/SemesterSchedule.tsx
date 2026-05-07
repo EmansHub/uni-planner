@@ -85,7 +85,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const loadDefaultPlan = async () => {
     const { data: plan, error: planError } = await supabase
       .from('degree_plans')
-      .select('id, name, is_default')
+      .select('id, name, is_default, has_overload')
       .eq('is_default', true)
       .single();
 
@@ -702,7 +702,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       relatedIds.forEach(id => newChosen.delete(id));
       toast.info('Section unselected');
     } else {
-      const courseSections = groupedSections[section.courseCode] || [];
+    if (wouldExceedCreditLimit(section)) {
+      toast.error(`This schedule cannot exceed ${getMaxScheduleCredits()} credit hours.`);
+      return;
+    }
+
+    const courseSections = groupedSections[section.courseCode] || [];
 
       courseSections.forEach(s => {
         const isSameCourse = s.courseCode === section.courseCode;
@@ -748,6 +753,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     if (!addedSections.has(section.id)) return 'impossible';
 
     if (chosenSections.has(section.id)) return 'chosen';
+
+    if (wouldExceedCreditLimit(section)) {
+      return 'impossible';
+    }
 
     const courseSections = groupedSections[section.courseCode] || [];
 
@@ -800,6 +809,37 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       }
     });
     return Array.from(uniqueCRNs.values()).reduce((total, section) => total + section.credits, 0);
+  };
+
+  const getMaxScheduleCredits = () => {
+  if (currentSemester?.term === 'Summer' || currentSemester?.planKey?.startsWith('summer-')) {
+    return 9;
+  }
+
+  if (defaultPlan?.has_overload) {
+    return 22;
+  }
+
+  return 20;
+};
+
+  const wouldExceedCreditLimit = (section: CourseSection) => {
+    const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
+
+    const uniqueCRNs = new Map<string, CourseSection>();
+
+    chosenSectionsList.forEach(s => {
+      uniqueCRNs.set(s.crn, s);
+    });
+
+    uniqueCRNs.set(section.crn, section);
+
+    const totalCredits = Array.from(uniqueCRNs.values()).reduce(
+      (total, s) => total + s.credits,
+      0
+    );
+
+    return totalCredits > getMaxScheduleCredits();
   };
 
   const getLecLabWarnings = () => {
