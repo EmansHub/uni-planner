@@ -177,6 +177,60 @@ User context:
     except Exception as e:
         print("CHATBOT ERROR:", str(e))
         return jsonify({"error": str(e)}), 500 
+    
+    
+def interpret_ai_preferences(preferences):
+    if not preferences or not preferences.strip():
+        return {
+            "include_summer": False,
+            "avoid_summer": False,
+            "pace": "balanced",
+            "max_credits": None,
+            "min_fall_spring_credits": 10,
+            "notes": ""
+        }
+
+    try:
+        print("GPT DEGREE PLAN PREF CALL STARTED")
+        print("USER PREFERENCES SENT TO GPT:", preferences)
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            instructions="""
+You are helping a university planning system interpret student preferences.
+
+Return ONLY valid JSON.
+Do not explain.
+
+Fields:
+- include_summer: boolean
+- avoid_summer: boolean
+- pace: "light" | "balanced" | "fast"
+- max_credits: number or null
+- min_fall_spring_credits: number
+- notes: short string
+
+Rules:
+If user says "no summer", "without summer", "do not include summer", avoid_summer must be true and include_summer false.
+If user says "summer", "fast", or "graduate faster", include_summer can be true unless avoid_summer is true.
+Fall/Spring full-time minimum should usually be 10 credits.
+""",
+            input=preferences
+        )
+
+        text = response.output_text.strip()
+        print("GPT DEGREE PLAN PREF RAW OUTPUT:", text)
+        return json.loads(text)
+
+    except Exception as e:
+        print("AI PREFERENCE INTERPRETATION ERROR:", str(e))
+        return {
+            "include_summer": should_include_summer(preferences),
+            "avoid_summer": "no summer" in preferences.lower() or "without summer" in preferences.lower(),
+            "pace": "balanced",
+            "max_credits": None,
+            "min_fall_spring_credits": 10,
+            "notes": "Fallback preference parsing used."
+        }    
       
     
 def get_sections_for_courses(course_ids):
@@ -552,16 +606,16 @@ def generate_schedule():
 
         course_ids = data.get("course_ids", [])
         preferences = data.get("preferences", "")
+        ai_preferences = interpret_ai_preferences(preferences)
         semester_slots = data.get("semester_slots", [])
         
-        if "include_summer" in data and not bool(data.get("include_summer")):
-            semester_slots = [
-                slot for slot in semester_slots
-                if slot.get("term") != "summer"
-            ]
+        if "include_summer" in data:
+            include_summer = bool(data.get("include_summer"))
+        else:
+            include_summer = bool(ai_preferences.get("include_summer", False))
 
-        if not course_ids:
-            return jsonify({"error": "course_ids is required"}), 400
+        if ai_preferences.get("avoid_summer"):
+            include_summer = False
 
         sections = get_sections_for_courses(course_ids)
 
@@ -747,15 +801,21 @@ def generate_degree_plan():
         current_courses = data.get("current_courses", [])
         preferences = data.get("preferences", "")
         semester_slots = data.get("semester_slots", [])
+        
+        ai_preferences = interpret_ai_preferences(preferences)
 
         MAX_CREDITS = get_max_credits_from_preferences(preferences)
         
         if "include_summer" in data:
             include_summer = bool(data.get("include_summer"))
         else:
-            include_summer = should_include_summer(preferences)   
+            include_summer = bool(ai_preferences.get("include_summer", False)) 
+            
+        if ai_preferences.get("avoid_summer"):    
+            include_summer = False 
              
         SUMMER_MAX_CREDITS = 9
+        MIN_FALL_SPRING_CREDITS = ai_preferences.get("min_fall_spring_credits", 10) or 10
         MAX_PLAN_YEARS = 6
         MAX_PLAN_TERMS = len(semester_slots) if semester_slots else MAX_PLAN_YEARS * (3 if include_summer else 2)
 
@@ -894,6 +954,18 @@ def generate_degree_plan():
                 course_info[c].get("credits", 0) or 0
                 for c in course_ids
             )
+            
+        def is_foundation_or_core(course_id):
+            category = course_info[course_id]["category"]
+
+            return category in [
+                "Preparation Program",
+                "Core Curriculum",
+                "Degree Specific Core",
+                "Natural Science Electives",
+                "College Core",
+                "Social Science Electives",
+            ]    
 
         def can_place_course(course_id, semester_courses, term, taken_course_ids):
             allowed_terms = offering_rules.get(course_id, [])
@@ -991,6 +1063,186 @@ def generate_degree_plan():
                 -unlock_count,
                 course_info[course_id]["credits"]
             )
+            
+        def ai_improve_degree_plan(draft_semesters):
+            """
+            GPT improves the draft degree plan layout.
+            Backend accepts GPT output only if it passes all DB/rule validation.
+            """
+            if not draft_semesters:
+                return draft_semesters
+
+            try:
+                planned_course_ids = [
+                    course_id
+                    for semester in draft_semesters
+                    for course_id in semester
+                ]
+
+                course_summary = []
+
+                for course_id in planned_course_ids:
+                    info = course_info.get(course_id, {})
+
+                    course_summary.append({
+                        "id": course_id,
+                        "name": info.get("name", ""),
+                        "credits": info.get("credits", 0),
+                        "category": info.get("category", ""),
+                        "required_hours": get_course_required_hours(course_id),
+                        "offered_terms": offering_rules.get(course_id, []),
+                        "prerequisites": prereq_map.get(course_id, []),
+                        "must_be_alone": info.get("must_be_alone", False),
+                    })
+
+                semester_summary = []
+
+                for index, semester in enumerate(draft_semesters):
+                    semester_summary.append({
+                        "index": index,
+                        "term": get_term_for_index(index),
+                        "courses": semester,
+                        "credits": get_semester_credits(semester),
+                    })
+
+                ai_input = {
+                    "student_preferences": preferences,
+                    "rules": {
+                        "fall_spring_max_credits": MAX_CREDITS,
+                        "summer_max_credits": SUMMER_MAX_CREDITS,
+                        "fall_spring_min_preferred_credits": MIN_FALL_SPRING_CREDITS,
+                        "max_years": MAX_PLAN_YEARS,
+                        "important_notes": [
+                            "Do not add new courses.",
+                            "Do not remove courses.",
+                            "Do not duplicate courses.",
+                            "Respect prerequisites.",
+                            "Respect required_hours / student standing.",
+                            "Respect course offering terms.",
+                            "Respect credit limits.",
+                            "Prefer core/foundation courses early.",
+                            "Avoid Fall/Spring semesters below 10 credits when possible.",
+                            "Do not put more than one Social Science Elective in the same semester when possible.",
+                            "Major Electives should not be before junior standing."
+                        ]
+                    },
+                    "courses": course_summary,
+                    "draft_plan": semester_summary
+                }
+
+                print("GPT DEGREE PLAN IMPROVEMENT CALL STARTED")
+                print("DRAFT PLAN SENT TO GPT:", json.dumps(ai_input, indent=2))
+                
+                response = client.responses.create(
+                    model="gpt-4.1-mini",
+                    instructions="""
+You improve a university degree plan.
+
+Return ONLY valid JSON.
+No markdown.
+No explanation outside JSON.
+
+You must return this schema:
+{
+  "plan": [
+    ["COURSEID1", "COURSEID2"],
+    ["COURSEID3"]
+  ],
+  "notes": "short explanation"
+}
+
+Rules:
+- Use only the exact course IDs provided.
+- Do not add courses.
+- Do not remove courses.
+- Do not duplicate courses.
+- Keep prerequisites before courses that require them.
+- Keep courses in terms where they are offered.
+- Keep Fall/Spring under the max credit limit.
+- Keep Summer under the summer credit limit.
+- Prefer 10+ credits in Fall/Spring when possible.
+- Prefer foundation/core courses earlier.
+- Keep major electives later.
+- If you cannot improve safely, return the same draft plan.
+""",
+                    input=json.dumps(ai_input)
+                )
+
+                raw_text = response.output_text.strip()
+                print("GPT DEGREE PLAN IMPROVEMENT RAW OUTPUT:", raw_text)
+                raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+
+                ai_result = json.loads(raw_text)
+                ai_plan = ai_result.get("plan", [])
+
+                if not ai_plan or not isinstance(ai_plan, list):
+                    return draft_semesters
+
+                original_flat = sorted(planned_course_ids)
+                ai_flat = sorted([
+                    str(course_id).replace(" ", "").upper()
+                    for semester in ai_plan
+                    for course_id in semester
+                ])
+
+                # GPT must keep the exact same courses
+                if ai_flat != original_flat:
+                    generation_warnings.append(
+                        "AI plan improvement was rejected because it changed the course list."
+                    )
+                    return draft_semesters
+
+                # Validate GPT plan using the same backend rules
+                validated_semesters = []
+                validation_taken = set(blocked_set)
+
+                for index, ai_semester in enumerate(ai_plan):
+                    term = get_term_for_index(index)
+                    validated_semester = []
+
+                    for raw_course_id in ai_semester:
+                        course_id = str(raw_course_id).replace(" ", "").upper()
+
+                        if course_id not in course_info:
+                            return draft_semesters
+
+                        if course_id in validated_semester:
+                            return draft_semesters
+
+                        if not can_place_course(
+                            course_id=course_id,
+                            semester_courses=validated_semester,
+                            term=term,
+                            taken_course_ids=validation_taken
+                        ):
+                            
+                            return draft_semesters
+
+                        validated_semester.append(course_id)
+
+                    if validated_semester:
+                        validated_semesters.append(validated_semester)
+
+                        for course_id in validated_semester:
+                            validation_taken.add(course_id)
+
+                validated_flat = sorted([
+                    course_id
+                    for semester in validated_semesters
+                    for course_id in semester
+                ])
+
+                if validated_flat != original_flat:
+                    return draft_semesters
+
+                return validated_semesters
+
+            except Exception as e:
+                print("AI DEGREE PLAN IMPROVEMENT ERROR:", str(e))
+                generation_warnings.append(
+                    "AI improvement fallback used; backend rule-based draft was kept."
+                )
+                return draft_semesters
 
         remaining_courses.sort(key=get_priority)
 
@@ -1018,8 +1270,9 @@ def generate_degree_plan():
                     
             eligible_courses.sort(
                 key=lambda course: (
-                    -sum(1 for future_course, prereqs in prereq_map.items() if course in prereqs),
-                    -course_info[course].get("credits", 0)
+                    0 if semester_index < 2 and is_foundation_or_core(course) else 1,
+                    get_priority(course)
+
                 )
             )
             
@@ -1043,6 +1296,17 @@ def generate_degree_plan():
                     break
 
                 continue
+            
+            semester_credits = get_semester_credits(semester_courses)
+
+            if (
+                current_term != "summer"
+                and semester_courses
+                and semester_credits < MIN_FALL_SPRING_CREDITS
+            ):
+                generation_warnings.append(
+                    f"{current_term.capitalize()} semester is below full-time credit load."
+                )
 
             skipped_terms = 0
             semesters.append(semester_courses)
@@ -1055,8 +1319,10 @@ def generate_degree_plan():
 
         if remaining_courses:
             generation_warnings.append(
-                "Some courses could not be placed within the 6-year limit while following all DB rules."
+                "Some courses may need advisor review."
             )
+            
+        semesters = ai_improve_degree_plan(semesters)    
 
         # Place senior project once, after normal courses, following DB rules.
         for senior_project in senior_project_courses:
@@ -1144,6 +1410,9 @@ def generate_degree_plan():
             "max_years": MAX_PLAN_YEARS,
             "max_terms": MAX_PLAN_TERMS,
             "warnings": generation_warnings,
+            "ai_used": True,
+            "ai_model": "gpt-4.1-mini",
+            "ai_role": "GPT interpreted preferences and attempted to improve the DB-validated plan",
             "plan": semesters
         })
 

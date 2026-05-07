@@ -2051,7 +2051,7 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                         <Label htmlFor="ai-prompt">Your Preferences (Optional)</Label>
                         <Textarea
                           id="ai-prompt"
-                          placeholder="e.g., Light semesters, fast plan with summer, max 15 hours, no summer"
+                          placeholder="e.g., I want to graduate faster, max 16 credits with summer, light plan no summer"
                           value={aiPrompt}
                           onChange={(e) => setAiPrompt(e.target.value)}
                           rows={4}
