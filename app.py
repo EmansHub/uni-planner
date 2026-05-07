@@ -391,6 +391,98 @@ def can_add_section(schedule_sections, new_section):
 
     return score
 
+def ai_rank_schedule_options(options, preferences):
+    if not options:
+        return options
+
+    try:
+        simplified_options = []
+
+        for index, option in enumerate(options):
+            simplified_sections = []
+
+            for section in option.get("sections", []):
+                simplified_sections.append({
+                    "crn": section.get("crn"),
+                    "course_id": section.get("course_id"),
+                    "section": section.get("section"),
+                    "instructor": section.get("instructor"),
+                    "meetings": section.get("course_section_meetings", [])
+                })
+
+            simplified_options.append({
+                "option_index": index,
+                "sections": simplified_sections,
+                "skipped_courses": option.get("skipped_courses", [])
+            })
+
+        ai_input = {
+            "student_preferences": preferences,
+            "schedule_options": simplified_options,
+            "rules": [
+                "Do not create new CRNs.",
+                "Do not remove or change CRNs.",
+                "Only rank the provided conflict-free options.",
+                "Prefer options that match the user's time/day preferences.",
+                "Prefer options with fewer skipped courses.",
+                "Return only valid JSON."
+            ]
+        }
+
+        print("GPT SCHEDULE RANKING CALL STARTED")
+        print("SCHEDULE OPTIONS SENT TO GPT:", json.dumps(ai_input, indent=2))
+
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            instructions="""
+You rank university schedule options.
+
+Return ONLY valid JSON.
+No markdown.
+No explanation outside JSON.
+
+Schema:
+{
+  "ranked_option_indexes": [0, 1, 2],
+  "reason": "short explanation"
+}
+
+Rules:
+- Only use option_index values that were provided.
+- Do not invent sections or CRNs.
+- Prefer schedules that match the student's preferences.
+- Prefer schedules with fewer skipped courses.
+""",
+            input=json.dumps(ai_input)
+        )
+
+        raw_text = response.output_text.strip()
+        raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+
+        print("GPT SCHEDULE RANKING RAW OUTPUT:", raw_text)
+
+        ai_result = json.loads(raw_text)
+        ranked_indexes = ai_result.get("ranked_option_indexes", [])
+
+        valid_indexes = [
+            i for i in ranked_indexes
+            if isinstance(i, int) and 0 <= i < len(options)
+        ]
+
+        if not valid_indexes:
+            return options
+
+        ranked_options = [options[i] for i in valid_indexes]
+
+        for i, option in enumerate(options):
+            if i not in valid_indexes:
+                ranked_options.append(option)
+
+        return ranked_options
+
+    except Exception as e:
+        print("AI SCHEDULE RANKING ERROR:", str(e))
+        return options
 
 def build_schedule_options(course_ids, sections, max_options=3, allow_partial=True):
     grouped = {}
@@ -636,13 +728,18 @@ def generate_schedule():
         strict_options = build_schedule_options(course_ids, filtered_sections)
 
         if strict_options:
+            ranked_options = ai_rank_schedule_options(strict_options, preferences)
+            
             return jsonify({
-                "message": "Schedule options generated using your preferences.",
+                "message": "AI-ranked schedule options generated using your preferences.",
                 "course_ids": course_ids,
                 "preferences": preferences,
-                "option_count": len(strict_options),
-                "options": strict_options,
+                "option_count": len(ranked_options),
+                "options": ranked_options,
                 "used_fallback": False,
+                "ai_used": True,
+                "ai_model": "gpt-4.1-mini",
+                "ai_role": "GPT ranked conflict-free schedule options based on user preferences.",
                 "explanations": []
             })
 
@@ -661,14 +758,19 @@ def generate_schedule():
             explanations.append(
                 "Some preferences could not be fully applied, so these are the closest conflict-free schedules."
             )
+            
+            ranked_options = ai_rank_schedule_options(fallback_options, preferences)
 
             return jsonify({
-                "message": "Closest conflict-free schedule options generated.",
+                "message": "AI-ranked closest conflict-free schedule options generated.",
                 "course_ids": course_ids,
                 "preferences": preferences,
-                "option_count": len(fallback_options),
-                "options": fallback_options,
+                "option_count": len(ranked_options),
+                "options": ranked_options,
                 "used_fallback": True,
+                "ai_used": True,
+                "ai_model": "gpt-4.1-mini",
+                "ai_role": "GPT ranked fallback conflict-free schedule options based on user preferences.",
                 "explanations": explanations
             })
 

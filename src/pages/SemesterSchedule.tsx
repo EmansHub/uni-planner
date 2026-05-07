@@ -1424,13 +1424,18 @@ return;
                       />
                     </div>
 
-                    <Button 
-                      className="w-full" 
-                      onClick={handleGenerateAISchedule}
-                      disabled={aiGenerating}
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      {aiGenerating ? 'Generating...' : 'Generate Schedules'}
+                    <Button onClick={handleGenerateAISchedule} disabled={aiGenerating}>
+                      {aiGenerating ? (
+                      <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          Generating schedule...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Generate Schedule
+                        </>
+                      )}
                     </Button>
                     
                     {addedSections.size === 0 && (

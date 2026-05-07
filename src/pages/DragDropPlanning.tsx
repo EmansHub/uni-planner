@@ -92,6 +92,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [aiPlanWarnings, setAiPlanWarnings] = useState<string[]>([]);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
   const getCourseElectiveCategory = (course: Course) => {
   if (course.electiveCategory) return course.electiveCategory;
@@ -1155,6 +1156,7 @@ const getCappedDegreeCredits = (
 
 const handleGeneratePlan = async () => {
   try {
+    setIsGeneratingPlan(true);
     toast.info('AI is generating degree plan...');
 
 const promptLower = aiPrompt.toLowerCase();
@@ -1298,6 +1300,8 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
   } catch (error) {
     console.error("AI degree plan error:", error);
     toast.error("Failed to generate degree plan.");
+  } finally {
+    setIsGeneratingPlan(false);
   }
 };
 
@@ -2058,8 +2062,17 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                         />
                       </div>
                       <Button className="w-full" onClick={handleGeneratePlan}>
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Generate Plans
+                        {isGeneratingPlan ? (
+                          <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                               Generating plan...
+                          </>
+                        ):(
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Generate Plans
+                          </>
+                        )}
                       </Button>
                     </>
                   ) : (
