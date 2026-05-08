@@ -949,6 +949,30 @@ const getCappedDegreeCredits = (
   const handleDrop = (targetSemester: string) => {
     if (!draggedCourse || !draggedFromSemester) return;
 
+  const normalizedDraggedCourseId = String(draggedCourse.id)
+    .replace(/\s+/g, '')
+    .toUpperCase();
+
+  if (targetSemester !== 'available' && normalizedDraggedCourseId === 'ASSE4311') {
+    const sortedSemesters = [...semesters].sort(
+      (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
+    );
+
+    const semestersAfterTarget = sortedSemesters.filter(
+      semester =>
+        getSemesterOrder(semester.id) > getSemesterOrder(targetSemester) &&
+        semester.courses.length > 0
+    );
+
+    if (semestersAfterTarget.length === 0) {
+      toast.error('ASSE 4311 cannot be planned in the very last semester.');
+      setDraggedCourse(null);
+      setDraggedFromSemester(null);
+      setDragOverSemester(null);
+      return;
+    }
+  }
+
     // Check if target semester is completed
     if (targetSemester !== 'available') {
       const targetSem = semesters.find(s => s.id === targetSemester);
