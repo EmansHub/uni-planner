@@ -1314,7 +1314,7 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
     const finalPlan = backendPlan;
 
     const cleanedPlan = finalPlan.filter(
-      (sem) => sem.courses.length > 0
+      (sem: Semester) => sem.courses.length > 0
     );
 
     setGeneratedPlans([cleanedPlan]);
@@ -2094,7 +2094,7 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                         ):(
                           <>
                             <Sparkles className="w-4 h-4 mr-2" />
-                            Generate Plans
+                            Generate Plan
                           </>
                         )}
                       </Button>
@@ -2102,26 +2102,8 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPlanIndex(Math.max(0, currentPlanIndex - 1))}
-                          disabled={currentPlanIndex === 0}
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                        </Button>
-                        <span className="text-sm">
-                          Option {currentPlanIndex + 1} of {generatedPlans.length}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPlanIndex(Math.min(generatedPlans.length - 1, currentPlanIndex + 1))}
-                          disabled={currentPlanIndex === generatedPlans.length - 1}
-                        >
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      <h3 className="font-medium">Generated Degree Plan</h3>
+                    </div>
 
                       <div className="border rounded-lg p-4 bg-slate-50 space-y-3 max-h-96 overflow-y-auto">
                         <p className="text-xs text-slate-500">

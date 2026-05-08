@@ -1448,7 +1448,7 @@ return;
                     
                     {addedSections.size === 0 && (
                       <p className="text-sm text-center text-slate-500">
-                        No courses selected. AI will use your Degree Plan courses or all available courses.
+                        Please select courses to generating a schedule.
                       </p>
                     )}
                   </div>
