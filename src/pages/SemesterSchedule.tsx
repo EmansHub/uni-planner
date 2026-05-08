@@ -48,6 +48,8 @@ const TIME_SLOTS = [
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
 
+const HIDDEN_SCHEDULE_COURSES = new Set(['GEIT4361']);
+
 const mapMeetingDay = (day: string) => {
   const normalized = String(day).trim().toUpperCase();
 
@@ -300,10 +302,16 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         user.gender === 'Male' ? 'M' :
         user.gender;
 
-      const filteredByGender = formatted.filter(
-        section => section.gender === userGenderCode
-      );
-      setDbSections(filteredByGender);
+      const visibleSections = formatted.filter(section => {
+        const normalizedCourseCode = normalizeCourseCode(section.courseCode);
+
+        return (
+          !HIDDEN_SCHEDULE_COURSES.has(normalizedCourseCode) &&
+          section.gender === userGenderCode
+        );
+      });
+
+      setDbSections(visibleSections);
       setSectionsLoading(false);
     };  
 
