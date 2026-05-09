@@ -28,13 +28,15 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      toast.error('Password must be at least 8 characters and include uppercase, lowercase, and a number');
       return;
     }
 
-    if (newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
       return;
     }
 
@@ -88,7 +90,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
               <Input
                 id="newPassword"
                 type="password"
-                placeholder="Enter new password (min. 6 characters)"
+                placeholder="Enter new password (min. 8 characters)"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={loading}

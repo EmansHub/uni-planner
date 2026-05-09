@@ -83,8 +83,10 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
     //  return;
     //}
 
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+    if (!passwordRegex.test(password)) {
+      toast.error('Password must be at least 8 characters and include uppercase, lowercase, and a number');
       return;
     }
 
@@ -254,7 +256,7 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               <Input
                 id="password"
                 type="password"
-                placeholder="Create a password (min. 6 characters)"
+                placeholder="Create a password (min. 8 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={handleKeyPress}
