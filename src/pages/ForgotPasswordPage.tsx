@@ -23,20 +23,15 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
 
 
   const handleResetRequest = async () => {
-    // Validate email
     if (!email) {
       toast.error('Please enter your email address');
       return;
     }
 
-    //if (!email.endsWith('@pmu.edu.sa')) {
-    //  toast.error('Please use your PMU email');
-    //  return;
-    //}
-
     setLoading(true);
 
     try {
+      // Send the user back to the app after they open the Supabase reset link.
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });

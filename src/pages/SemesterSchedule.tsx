@@ -46,11 +46,14 @@ const TIME_SLOTS = [
   '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
 ];
 
+// The schedule grid follows PMU's Sunday-through-Thursday teaching week.
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
 
+// Internship is planned in degree plans but does not need a weekly class schedule.
 const HIDDEN_SCHEDULE_COURSES = new Set(['GEIT4361']);
 
 const mapMeetingDay = (day: string) => {
+  // PMU schedule data uses one-letter meeting day codes.
   const normalized = String(day).trim().toUpperCase();
 
   if (normalized === 'U') return 'Sunday';
@@ -64,15 +67,15 @@ const mapMeetingDay = (day: string) => {
 
 export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const navigate = useNavigate();
-  // Track which section IDs are added (visible on the grid)
+  // Added sections appear on the grid; chosen sections are the final CRNs.
   const [addedSections, setAddedSections] = useState<Set<string>>(new Set());
-  // Track which specific sections are chosen (clicked on the grid)
   const [chosenSections, setChosenSections] = useState<Set<string>>(new Set());
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [savedSchedules, setSavedSchedules] = useState<any[]>([]);
   const [courseFilter, setCourseFilter] = useState<'all' | 'degree-plan'>('all');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
+  // AI options are kept separate until the student applies one to the grid.
   const [aiScheduleOptions, setAiScheduleOptions] = useState<AIScheduleOption[]>([]);
   const [selectedAIOption, setSelectedAIOption] = useState(0);
   const [previewingAI, setPreviewingAI] = useState(false);
@@ -85,6 +88,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [prerequisiteMap, setPrerequisiteMap] = useState<Record<string, string[]>>({});
 
   const loadDefaultPlan = async () => {
+    // The starred degree plan determines the default schedule filter.
     const { data: plan, error: planError } = await supabase
       .from('degree_plans')
       .select('id, name, is_default, has_overload')
@@ -97,6 +101,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Load semester containers before loading their courses.
     const { data: semesters, error: semestersError } = await supabase
       .from('degree_plan_semesters')
       .select('semester_key, completed, is_summer, display_order')
@@ -132,12 +137,14 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Completed courses are excluded from schedule suggestions.
     const completedCourseIds = (completedRows || []).map((row: any) =>
       normalizeCourseCode(row.course_id)
     );
 
     const semestersMap: any = {};
 
+    // Convert saved plan rows into the same shape used by schedule filters.
     (semesters || []).forEach((sem: any) => {
       semestersMap[sem.semester_key] = {
         id: sem.semester_key,
@@ -147,6 +154,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       };
     });
 
+    // Attach each saved course to its semester bucket.
     (semesterCourses || []).forEach((row: any) => {
       if (!semestersMap[row.semester_key]) return;
 
@@ -166,6 +174,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const sectionsSource = dbSections;
 
   const groupedSections = sectionsSource.reduce((acc, section) => {
+    // Group by course so users can add or compare all sections for one course.
     if (!acc[section.courseCode]) {
       acc[section.courseCode] = [];
     }
@@ -173,8 +182,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return acc;
   }, {} as Record<string, CourseSection[]>);
 
-  // Load saved schedules on mount
   React.useEffect(() => {
+    // Load all schedule data once when the page opens.
     setCurrentSemester(getCurrentSemester());
     loadSavedSchedules();
     loadSections();
@@ -185,6 +194,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   const loadSavedSchedules = async () => {
     try {
+      // Saved schedules belong to the signed-in user, not just the profile object.
       const { data: authData } = await supabase.auth.getUser();
       const authUser = authData.user;
 
@@ -212,6 +222,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         return;
       }
 
+      // Saved schedule rows store CRNs; section details come from the current offerings.
       const formattedSchedules = (data || []).map((schedule: any, index: number) => {
         const sectionRows = schedule.saved_schedule_sections ?? [];
 
@@ -237,6 +248,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     setSectionsLoading(true);
 
+    // Load current PMU offerings with meeting times for the weekly grid.
     const { data, error } = await supabase
       .from('course_sections')
       .select(`
@@ -270,6 +282,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const meetings = row.course_section_meetings || [];
       const days = meetings.map((m: any) => mapMeetingDay(m.day));
 
+      // First and last meeting define the visual block range on the grid.
       const sortedMeetings = [...meetings].sort((a: any, b: any) =>
         String(a.start_time).localeCompare(String(b.start_time))
       );
@@ -297,11 +310,13 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       };
     });
 
+    // PMU section data uses M/F while the profile stores readable labels.
     const userGenderCode =
       user.gender === 'Female' ? 'F' :
         user.gender === 'Male' ? 'M' :
           user.gender;
 
+    // Show only sections matching the user's gender and hide non-scheduled internship courses.
     const visibleSections = formatted.filter(section => {
       const normalizedCourseCode = normalizeCourseCode(section.courseCode);
 
@@ -331,6 +346,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const ids = new Set<string>();
 
+    // Curriculum IDs limit the "All Courses" tab to courses in the user's program.
     (data || []).forEach((row: any) => {
       ids.add(normalizeCourseCode(row.course_id));
     });
@@ -339,6 +355,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const loadPrerequisites = async () => {
+    // Prerequisites prevent unavailable courses from showing in schedule suggestions.
     const { data, error } = await supabase
       .from('course_prerequisites')
       .select('course_id, prerequisite_course_id');
@@ -369,8 +386,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return defaultPlan;
   };
 
-  // Helper function to normalize course codes for comparison
   const normalizeCourseCode = (code: string) => {
+    // Normalization lets IDs like ASSE4311 and labels like ASSE 4311 match.
     return String(code)
       .replace(/"/g, '')
       .replace(/\s+/g, '')
@@ -378,9 +395,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getCurrentSemester = () => {
+    // Determine the active registration term from today's date.
     const now = new Date();
 
-    const month = now.getMonth() + 1; // 1–12
+    const month = now.getMonth() + 1;
     const year = now.getFullYear();
 
     let term: 'Fall' | 'Spring' | 'Summer';
@@ -388,12 +406,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     let planKey = '';
 
     if (month >= 7 && month <= 10) {
-      // July → October
       term = 'Fall';
       academicYearStart = year;
       planKey = `fall-${year}`;
     } else if (month >= 11 || month <= 2) {
-      // Nov → Feb
       term = 'Spring';
 
       if (month <= 2) {
@@ -404,7 +420,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         planKey = `spring-${year + 1}`;
       }
     } else {
-      // March → June
       term = 'Summer';
       academicYearStart = year - 1;
       planKey = `summer-${year}`;
@@ -424,18 +439,14 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     if (!plan) return new Set<string>();
 
     const courses = new Set<string>();
-    // Get all courses from uncompleted semesters only
     const semesters = Object.values(plan.semesters || {}) as any[];
 
-    // Iterate through all semesters and only include courses from uncompleted ones
+    // Include courses from uncompleted semesters so students can schedule remaining work.
     for (const semester of semesters) {
-      // Skip completed semesters
       if (semester.completed) continue;
 
-      // Add courses from uncompleted semesters
       if (semester.courses && semester.courses.length > 0) {
         semester.courses.forEach((course: any) => {
-          // Store normalized version for matching
           courses.add(normalizeCourseCode(course.code));
         });
       }
@@ -443,7 +454,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return courses;
   };
 
-  // Get all courses that exist in the user's degree plan (for filtering "All Courses")
   const getAllPlanCourses = () => {
     const plan = getDefaultDegreePlan();
     if (!plan) return new Set<string>();
@@ -451,7 +461,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const courses = new Set<string>();
     const semesters = Object.values(plan.semesters || {}) as any[];
 
-    // Get all courses from the plan (completed and uncompleted)
+    // Include both completed and uncompleted courses when checking the plan contents.
     for (const semester of semesters) {
       if (semester.courses && semester.courses.length > 0) {
         semester.courses.forEach((course: any) => {
@@ -469,12 +479,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const courses = new Set<string>();
 
-    // Completed courses marked during course selection
+    // Include courses completed before the plan was built.
     (plan.completedCourseIds || []).forEach((courseId: string) => {
       courses.add(normalizeCourseCode(courseId));
     });
 
-    // Courses inside semesters marked as completed
+    // Include courses from semesters later marked completed.
     const semesters = Object.values(plan.semesters || {}) as any[];
 
     for (const semester of semesters) {
@@ -491,6 +501,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getCurrentSemesterCourses = () => {
+    // This helper returns courses assigned to the current plan term.
     const plan = getDefaultDegreePlan();
 
     if (!plan || !currentSemester) return new Set<string>();
@@ -513,6 +524,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const currentKey = currentSemester.planKey;
 
+    // The previous planned term represents the courses already in progress.
     const previousSemesterKey =
       currentKey.startsWith('summer-')
         ? currentKey.replace('summer-', 'spring-')
@@ -540,16 +552,19 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const completedCourses = getCompletedCourses();
 
+    // A course is schedulable only when every prerequisite has been completed.
     return requiredPrereqs.every(prereqId => completedCourses.has(prereqId));
   };
 
   const getFilteredSections = () => {
+    // Build the visible course list from the selected tab and search input.
     let filtered: Record<string, CourseSection[]> = {};
 
     const completedCourses = getCompletedCourses();
     const currentlyTakingCourses = getCurrentlyTakingCourses();
 
     if (courseFilter === 'all') {
+      // "All Courses" still respects curriculum, completion, current courses, and prerequisites.
       Object.entries(groupedSections).forEach(([courseCode, sections]) => {
         const normalizedCode = courseCode.replace(/\s/g, '').toUpperCase();
 
@@ -568,6 +583,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         }
       });
     } else {
+      // Degree-plan mode shows only courses assigned to the current planned semester.
       const plan = getDefaultDegreePlan();
 
       if (!plan || !currentSemester) {
@@ -596,6 +612,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     }
 
     if (searchQuery.trim()) {
+      // Search can match course code, course name, or instructor.
       const query = searchQuery.toLowerCase().trim();
       const searchFiltered: Record<string, CourseSection[]> = {};
 
@@ -636,6 +653,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   ];
 
   const getCourseColor = (courseCode: string) => {
+    // Hash the course code so each course keeps a stable color across renders.
     let hash = 0;
     for (let i = 0; i < courseCode.length; i++) {
       hash = courseCode.charCodeAt(i) + ((hash << 5) - hash);
@@ -644,11 +662,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const toggleSection = (sectionId: string) => {
-    // Find the section to get its CRN
     const section = sectionsSource.find(s => s.id === sectionId);
     if (!section) return;
 
-    // Find all sections with the same CRN (parts of the same course meeting at different times)
+    // Same-CRN rows represent the same section meeting on multiple days.
     const relatedSections = sectionsSource.filter(s => s.crn === section.crn);
     const relatedIds = relatedSections.map(s => s.id);
 
@@ -656,14 +673,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const newChosen = new Set(chosenSections);
 
     if (newAdded.has(sectionId)) {
-      // Remove all related sections
       relatedIds.forEach(id => {
         newAdded.delete(id);
         newChosen.delete(id);
       });
       toast.success('Section removed from schedule');
     } else {
-      // Add all related sections
       relatedIds.forEach(id => {
         newAdded.add(id);
       });
@@ -675,6 +690,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const toggleAllSectionsOfCourse = (courseCode: string) => {
+    // Course-level toggling adds or removes every section card for that course.
     const sections = groupedSections[courseCode] || [];
     const anySectionAdded = sections.some(s => addedSections.has(s.id));
 
@@ -682,14 +698,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const newChosen = new Set(chosenSections);
 
     if (anySectionAdded) {
-      // Remove all sections of this course
       sections.forEach(section => {
         newAdded.delete(section.id);
         newChosen.delete(section.id);
       });
       toast.success(`All ${courseCode} sections removed`);
     } else {
-      // Add all sections of this course
       sections.forEach(section => {
         newAdded.add(section.id);
       });
@@ -701,6 +715,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleSectionClick = (section: CourseSection) => {
+    // Clicking inside the grid chooses a final section, unlike adding from the list.
     const relatedSections = sectionsSource.filter(s => s.crn === section.crn);
     const relatedIds = relatedSections.map(s => s.id);
 
@@ -722,13 +737,13 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
         if (!isSameCourse) return;
 
-        // If selected section is LEC_LAB, remove all LEC, LAB, and LEC_LAB for this course
+        // A combined lecture/lab replaces separate lecture and lab choices.
         if (section.sectionType === 'LEC_LAB') {
           newChosen.delete(s.id);
           return;
         }
 
-        // If selected section is LEC or LAB, remove same type and LEC_LAB
+        // Separate sections replace the same type and any combined option.
         if (s.sectionType === section.sectionType || s.sectionType === 'LEC_LAB') {
           newChosen.delete(s.id);
         }
@@ -742,6 +757,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const hasTimeConflict = (section1: CourseSection, section2: CourseSection) => {
+    // Time conflicts matter only when two sections share at least one meeting day.
     const hasCommonDay = section1.days.some(day => section2.days.includes(day));
     if (!hasCommonDay) return false;
 
@@ -758,6 +774,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getSectionState = (section: CourseSection): 'chosen' | 'possible' | 'impossible' => {
+    // State drives opacity, cursor, and whether a grid item can be selected.
     if (!addedSections.has(section.id)) return 'impossible';
 
     if (chosenSections.has(section.id)) return 'chosen';
@@ -768,17 +785,15 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const courseSections = groupedSections[section.courseCode] || [];
 
+    // Block sections that conflict with the chosen lecture/lab structure.
     const blockedBySameCourseChoice = courseSections.some(s => {
       if (s.id === section.id) return false;
       if (!chosenSections.has(s.id)) return false;
 
-      // If another LEC_LAB is chosen, block all other sections for this course
       if (s.sectionType === 'LEC_LAB') return true;
 
-      // If this section is LEC_LAB, block it when any LEC or LAB is already chosen
       if (section.sectionType === 'LEC_LAB') return true;
 
-      // Normal rule: LEC blocks other LEC, LAB blocks other LAB
       return s.sectionType === section.sectionType;
     });
 
@@ -795,10 +810,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getVisibleSections = () => {
+    // Only added sections are rendered onto the weekly grid.
     return sectionsSource.filter(section => addedSections.has(section.id));
   };
 
   const getAddedCourses = () => {
+    // Course-level summaries need unique course codes from added section IDs.
     const courses = new Set<string>();
     addedSections.forEach(sectionId => {
       const section = sectionsSource.find(s => s.id === sectionId);
@@ -809,7 +826,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   const getTotalCreditHours = () => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
-    // Remove duplicates by CRN to avoid counting credits multiple times
+    // Count each CRN once even when it has multiple meeting rows.
     const uniqueCRNs = new Map<string, CourseSection>();
     chosenSectionsList.forEach(section => {
       if (!uniqueCRNs.has(section.crn)) {
@@ -820,6 +837,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getMaxScheduleCredits = () => {
+    // Summer has a lower cap; overload permission raises regular semester capacity.
     if (currentSemester?.term === 'Summer' || currentSemester?.planKey?.startsWith('summer-')) {
       return 9;
     }
@@ -840,6 +858,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       uniqueCRNs.set(s.crn, s);
     });
 
+    // Include the candidate section when checking the projected total.
     uniqueCRNs.set(section.crn, section);
 
     const totalCredits = Array.from(uniqueCRNs.values()).reduce(
@@ -851,6 +870,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getLecLabWarnings = () => {
+    // Warnings are computed from final chosen sections, not merely visible options.
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
     const warnings: string[] = [];
 
@@ -874,6 +894,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
       const courseHasLectures = allCourseSections.some(s => s.sectionType === 'LEC');
 
+      // Warn when a course has separate lectures and labs but only one type is selected.
       if (hasCombined) return;
 
       if (courseHasLabs && courseHasLectures) {
@@ -892,7 +913,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   const handleCopyCRNs = () => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
-    // Remove duplicates by CRN (since sections with same CRN are now selected together)
+    // Copy each selected CRN once for registration.
     const uniqueCRNs = new Map<string, CourseSection>();
     chosenSectionsList.forEach(section => {
       if (!uniqueCRNs.has(section.crn)) {
@@ -909,7 +930,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handlePrintSchedule = () => {
-    // Add print styles temporarily
+    // Temporary print styles hide controls and print only the weekly grid.
     const style = document.createElement('style');
     style.id = 'print-styles';
     style.textContent = `
@@ -958,10 +979,9 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     `;
     document.head.appendChild(style);
 
-    // Print
     window.print();
 
-    // Remove print styles after a delay
+    // Remove print overrides after the browser opens the print dialog.
     setTimeout(() => {
       const styleElement = document.getElementById('print-styles');
       if (styleElement) {
@@ -994,7 +1014,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const allCourseSections = sectionsSource.filter(s => s.courseCode === courseCode);
       const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
 
-      // LEC_LAB counts as complete by itself
+      // Combined lecture/lab sections satisfy both required pieces.
       if (hasCombined) return;
 
       if (courseHasLabs) {
@@ -1011,6 +1031,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Persist only CRNs because section details can be reloaded from current offerings.
     const chosenCrns = Array.from(
       new Set(chosenSectionsList.map(section => section.crn))
     );
@@ -1030,6 +1051,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const scheduleName = `Schedule ${savedSchedules.length + 1}`;
 
+    // Create the schedule parent row first, then attach selected CRNs below.
     const { data: savedSchedule, error: scheduleError } = await supabase
       .from('saved_schedules')
       .insert({
@@ -1067,6 +1089,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const handleLoadSchedule = (schedule: any) => {
     const chosenCrns = new Set(schedule.chosenSectionIds || []);
 
+    // Expand saved CRNs back to all matching section IDs in the current data.
     const matchingSectionIds = sectionsSource
       .filter(section => chosenCrns.has(section.crn))
       .map(section => section.id);
@@ -1079,6 +1102,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleDeleteSchedule = async (scheduleId: string) => {
+    // Deleting the parent schedule removes it from the saved menu after reload.
     const { error } = await supabase
       .from('saved_schedules')
       .delete()
@@ -1095,6 +1119,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleResetSchedule = () => {
+    // Reset clears both visible options and final chosen CRNs.
     setAddedSections(new Set());
     setChosenSections(new Set());
     toast.success('Schedule reset! Start building a new schedule.');
@@ -1103,6 +1128,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const handleGenerateAISchedule = async () => {
     setAiGenerating(true);
 
+    // Backend returns conflict-free options for the currently added courses.
     const response = await fetch("http://127.0.0.1:5000/generate-schedule", {
       method: "POST",
       headers: {
@@ -1119,6 +1145,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const data = await response.json();
 
+    // The backend may return explanations instead of options when constraints are too tight.
     console.log("Backend schedule result:", data);
 
     if (!data.options || data.options.length === 0) {
@@ -1141,6 +1168,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     }
 
     const backendOptions: AIScheduleOption[] = data.options.map((option: any, index: number) => {
+      // Translate backend CRNs back into full frontend section objects.
       const optionSections = option.sections
         .map((backendSection: any) => {
           const crn = backendSection.crn;
@@ -1148,7 +1176,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         })
         .filter(Boolean) as CourseSection[];
 
-      //show skipped courses
+      // Surface courses the backend removed because no conflict-free section fit.
       if (option.skipped_courses && option.skipped_courses.length > 0) {
         toast.warning(
           <div className="whitespace-normal break-words max-w-md leading-snug">
@@ -1171,7 +1199,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     toast.success(`Generated ${backendOptions.length} schedule option(s)!`);
     return;
 
-    // If no sections added, automatically add sections from degree plan or all courses
+    // Unreachable fallback kept from the earlier local generator path.
     let sectionsToUse = new Set(addedSections);
     let autoAddedMessage = '';
 
@@ -1179,7 +1207,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const nextSemesterCourses = getNextSemesterCourses();
 
       if (nextSemesterCourses.size > 0) {
-        // Add all sections from degree plan courses
         Object.entries(groupedSections).forEach(([courseCode, sections]) => {
           const normalizedCode = normalizeCourseCode(courseCode);
           if (nextSemesterCourses.has(normalizedCode)) {
@@ -1188,21 +1215,18 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         });
         autoAddedMessage = 'Using courses from your Degree Plan. ';
       } else {
-        // Add all sections from all courses
         Object.values(groupedSections).forEach(sections => {
           sections.forEach(section => sectionsToUse.add(section.id));
         });
         autoAddedMessage = 'Using all available courses. ';
       }
 
-      // Update the state
       setAddedSections(sectionsToUse);
     }
 
     toast.info(autoAddedMessage + 'AI is generating optimal schedules...');
 
     setTimeout(() => {
-      // Generate 3 different schedule options
       const options: AIScheduleOption[] = [];
       const addedCoursesList = getAddedCourses();
 
@@ -1214,11 +1238,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
           const sections = groupedSections[courseCode] || [];
           const addedCourseSections = sections.filter(s => sectionsToUse.has(s.id));
 
-          // Apply different strategies for each option
+          // Each fallback option uses a different simple ordering strategy.
           let filtered = [...addedCourseSections];
 
           if (i === 0) {
-            // Option 1: Prefer MW classes
             filtered.sort((a, b) => {
               const aMW = a.days.includes('Monday') && a.days.includes('Wednesday');
               const bMW = b.days.includes('Monday') && b.days.includes('Wednesday');
@@ -1227,7 +1250,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
               return 0;
             });
           } else if (i === 1) {
-            // Option 2: Prefer TTh classes
             filtered.sort((a, b) => {
               const aTTh = a.days.includes('Tuesday') && a.days.includes('Thursday');
               const bTTh = b.days.includes('Tuesday') && b.days.includes('Thursday');
@@ -1236,7 +1258,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
               return 0;
             });
           } else {
-            // Option 3: Prefer compact schedule
             filtered.sort((a, b) => {
               const aStart = parseInt(a.startTime.replace(':', ''));
               const bStart = parseInt(b.startTime.replace(':', ''));
@@ -1244,7 +1265,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
             });
           }
 
-          // Pick first non-conflicting section
+          // Pick the first section that does not overlap the partial schedule.
           for (const section of filtered) {
             const hasConflict = scheduleSections.some(chosen => hasTimeConflict(section, chosen));
             if (!hasConflict) {
@@ -1276,6 +1297,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const selectedOption = aiScheduleOptions[selectedAIOption];
     if (!selectedOption) return;
 
+    // Applying an AI option makes those sections both visible and selected.
     const sectionIds = new Set(selectedOption.sections.map(s => s.id));
 
     setAddedSections(sectionIds);
@@ -1288,6 +1310,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleCancelAI = () => {
+    // Closing the dialog clears generated options so the next run starts fresh.
     setShowAIDialog(false);
     setAiScheduleOptions([]);
     setAiPrompt('');
@@ -1299,11 +1322,11 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return TIME_SLOTS.indexOf(time);
   };
 
-  // Convert time string (HH:MM) to minutes since start of day (08:00)
   const timeToMinutes = (time: string) => {
+    // Grid positioning is measured from 08:00.
     const [hours, minutes] = time.split(':').map(Number);
     const totalMinutes = hours * 60 + minutes;
-    const startOfDay = 8 * 60; // 08:00 in minutes
+    const startOfDay = 8 * 60;
     return totalMinutes - startOfDay;
   };
 
@@ -1311,7 +1334,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
     const durationMinutes = endMinutes - startMinutes;
-    // Each 30-minute slot is 17px tall (balanced compact view)
+    // Each 30-minute slot is 17px tall in the compact grid.
     return (durationMinutes / 30) * 17;
   };
 
@@ -1319,8 +1342,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     const slotMinutes = timeToMinutes(slotTime);
     const startMinutes = timeToMinutes(startTime);
     const offsetMinutes = startMinutes - slotMinutes;
-    // Convert minutes to pixels (17px per 30 minutes)
-    return (offsetMinutes / 30) * 17 + 2; // +2 for padding
+    // Add a small top offset so cards do not touch the grid border.
+    return (offsetMinutes / 30) * 17 + 2;
   };
 
   if (sectionsLoading) {
@@ -1402,6 +1425,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
             </DropdownMenu>
 
             <Dialog open={showAIDialog} onOpenChange={(open) => {
+              // Closing from outside the dialog should also clear AI state.
               if (!open) handleCancelAI();
               else setShowAIDialog(open);
             }}>
@@ -1463,7 +1487,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                       </Button>
                     </div>
 
-                    {/* Carousel */}
+                    {/* Generated options can be previewed before applying one. */}
                     <div className="relative">
                       <div className="flex items-center gap-4">
                         <Button
@@ -1528,7 +1552,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                             ) : (
                               <div className="space-y-2">
                                 <p className="text-sm text-center text-slate-600">Visual Preview</p>
-                                {/* Mini Weekly Grid Preview */}
+                                {/* Compact preview uses the same day/time matching as the main grid. */}
                                 <div className="border rounded-lg overflow-hidden bg-white">
                                   <div className="grid grid-cols-6 gap-px bg-slate-200">
                                     <div className="bg-slate-50 p-1 text-xs"></div>
@@ -1624,10 +1648,9 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
           </div>
         </div>
 
-        {/* HORIZONTAL LAYOUT - Courses LEFT, Schedule Grid RIGHT */}
+        {/* Main schedule builder: section list on the left, weekly grid on the right. */}
         <div className="grid grid-cols-1 md:grid-cols-[350px_1fr] gap-6">
 
-          {/* LEFT SIDE - Section List */}
           <Card className="h-fit md:sticky md:top-4">
             <CardHeader>
               <div className="flex items-center justify-between mb-2">
@@ -1689,6 +1712,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                           </div>
 
                           {sections.map(section => {
+                            // Added sections appear on the grid but are not final until selected.
                             const isAdded = addedSections.has(section.id);
 
                             return (
@@ -1726,7 +1750,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
             </CardContent>
           </Card>
 
-          {/* RIGHT SIDE - Schedule Grid */}
+          {/* Weekly grid shows added sections and lets users choose final CRNs. */}
           <Card id="weekly-schedule-print">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -1754,6 +1778,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                 {addedSections.size > 0 && (
                   <div className="flex flex-wrap gap-3">
                     {Array.from(getAddedCourses()).sort().map(courseCode => {
+                      // The legend shows the chosen section details when one exists.
                       const color = getCourseColor(courseCode);
                       const sections = groupedSections[courseCode] || [];
                       const chosenSection = sections.find(s => chosenSections.has(s.id));
@@ -1792,8 +1817,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                         {time}
                       </div>,
                       ...DAYS.map(day => {
-                        // Get all sections for this day that start at or within this time slot
-                        // A time slot represents a 60-minute period starting at 'time' (now showing only full hours)
+                        // A visible grid row represents the 60-minute period starting at this time.
                         const timeMinutes = timeToMinutes(time);
                         const nextSlotMinutes = timeMinutes + 60;
 
@@ -1801,11 +1825,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                           .filter(section => {
                             if (!section.days.includes(day)) return false;
                             const sectionStartMinutes = timeToMinutes(section.startTime);
-                            // Include section if it starts within this 60-minute slot
                             return sectionStartMinutes >= timeMinutes && sectionStartMinutes < nextSlotMinutes;
                           });
 
-                        // Build overlap groups: find all sections on this day that overlap with each other
+                        // Build overlap groups so conflicting cards share horizontal space.
                         const allSectionsOnDay = getVisibleSections().filter(s => s.days.includes(day));
                         const overlapGroups = new Map<string, Set<string>>(); // section.id -> Set of overlapping section IDs
 
@@ -1821,7 +1844,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                             const otherStart = timeToMinutes(otherSection.startTime);
                             const otherEnd = timeToMinutes(otherSection.endTime);
 
-                            // Check if time ranges overlap
                             if (sectionStart < otherEnd && sectionEnd > otherStart) {
                               overlappingIds.add(otherSection.id);
                             }
@@ -1830,15 +1852,14 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                           overlapGroups.set(section.id, overlappingIds);
                         });
 
-                        // Merge overlap groups to ensure consistency
-                        // If A overlaps with B and B overlaps with C, then A, B, C should all be in the same group
+                        // Merge connected overlaps so related conflicts use consistent widths.
                         const processedSections = new Set<string>();
                         const finalOverlapGroups = new Map<string, string[]>(); // section.id -> sorted array of all IDs in group
 
                         allSectionsOnDay.forEach(section => {
                           if (processedSections.has(section.id)) return;
 
-                          // Find all sections in this overlap group using BFS
+                          // Use BFS to collect every section connected by overlapping times.
                           const group = new Set<string>();
                           const queue = [section.id];
 
@@ -1859,10 +1880,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                             }
                           }
 
-                          // Sort the group for consistent ordering
                           const sortedGroup = Array.from(group).sort();
 
-                          // Assign this sorted group to all sections in it
                           sortedGroup.forEach(id => {
                             finalOverlapGroups.set(id, sortedGroup);
                           });
@@ -1888,11 +1907,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
                                 opacity = 'opacity-30';
                                 cursor = 'cursor-not-allowed';
                               } else {
-                                // possible
                                 opacity = 'opacity-70';
                               }
 
-                              // Get the overlap group for this section
+                              // Position overlapping sections side by side inside the same cell.
                               const overlapGroup = finalOverlapGroups.get(section.id) || [section.id];
                               const numOverlaps = overlapGroup.length;
                               const overlapIndex = overlapGroup.indexOf(section.id);

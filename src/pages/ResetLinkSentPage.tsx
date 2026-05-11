@@ -10,6 +10,8 @@ interface ResetLinkSentPageProps {
 
 export function ResetLinkSentPage({ email }: ResetLinkSentPageProps) {
   const navigate = useNavigate();
+
+  // This page confirms the request without exposing whether the email exists.
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
       <Card className="w-full max-w-md shadow-xl">

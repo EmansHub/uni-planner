@@ -19,12 +19,13 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 CORS(app)
 
 scheduler = BackgroundScheduler()
-# Run once every 24 hours
+# Refresh scraped PMU offerings once per day while the backend is running.
 scheduler.add_job(run_pmu_sync, 'interval', days=1)
 scheduler.start()
 
 
 def get_faq_reply(message: str):
+    # Answer common app questions locally before calling the AI model.
     lower = message.lower().strip()
 
     if "password" in lower or "reset" in lower:
@@ -50,8 +51,8 @@ def get_faq_reply(message: str):
 
     return None
 
-# --- helper function ---
 def build_user_context(user_id):
+    # Build a small context block so chatbot replies can reference the student's setup.
     lines = []
 
     try:
@@ -110,6 +111,7 @@ def test_scraper():
 
 @app.route('/sync-pmu-courses')
 def sync_pmu_courses():
+    # Manual endpoint for refreshing PMU course sections outside the scheduled job.
     try:
         result = run_pmu_sync()
         return jsonify(result)
@@ -130,17 +132,16 @@ def chatbot():
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
         
-    # 1)FAQ first
+        # FAQ answers are deterministic and avoid unnecessary AI calls.
         faq_reply = get_faq_reply(user_message)
         if faq_reply:
             return jsonify({"reply": faq_reply})
     
-    # 2) Optional personal context
         context_text = ""
         if user_id:
             context_text = build_user_context(user_id)
    
-        # 3) AI fallback    
+        # Fall back to AI only after local FAQ matching and optional context loading.
         response = client.responses.create(
             model="gpt-4.1-mini",
             instructions="""
@@ -180,6 +181,7 @@ User context:
     
     
 def interpret_ai_preferences(preferences):
+    # Convert free-text preferences into structured planning settings.
     if not preferences or not preferences.strip():
         return {
             "include_summer": False,
@@ -223,6 +225,7 @@ Fall/Spring full-time minimum should usually be 10 credits.
 
     except Exception as e:
         print("AI PREFERENCE INTERPRETATION ERROR:", str(e))
+        # Keep generation usable when AI preference parsing fails.
         return {
             "include_summer": should_include_summer(preferences),
             "avoid_summer": "no summer" in preferences.lower() or "without summer" in preferences.lower(),
@@ -234,6 +237,7 @@ Fall/Spring full-time minimum should usually be 10 credits.
       
     
 def get_sections_for_courses(course_ids):
+    # Fetch section offerings and meeting rows for the schedule generator.
     response = (
         supabase.table("course_sections")
         .select("""
@@ -262,6 +266,7 @@ def time_to_minutes(time_str):
 
 
 def extract_hour(text):
+    # Pull a simple hour value from phrases like "before 10" or "after 2 pm".
     match = re.search(r'\b(\d{1,2})\b', text.lower())
     if not match:
         return None
@@ -278,24 +283,25 @@ def extract_hour(text):
 
 
 def section_matches_preferences(section, preferences):
+    # Apply hard time/day preferences before building conflict-free schedules.
     preferences = preferences.lower()
     meetings = section.get("course_section_meetings", [])
 
-    # morning = before 12 PM
+    # Morning means every meeting starts before noon.
     if "morning" in preferences:
         for meeting in meetings:
             start = time_to_minutes(meeting["start_time"])
             if start >= 12 * 60:
                 return False
 
-    # early = before 2 PM
+    # Early means every meeting starts before 2 PM.
     if "early" in preferences:
         for meeting in meetings:
             start = time_to_minutes(meeting["start_time"])
             if start >= 14 * 60:
                 return False
 
-    # no classes before X
+    # Reject sections that start earlier than the requested hour.
     if "no classes before" in preferences or "not before" in preferences:
         hour = extract_hour(preferences)
         if hour is not None:
@@ -304,7 +310,7 @@ def section_matches_preferences(section, preferences):
                 if start < hour * 60:
                     return False
 
-    # no classes after X
+    # Reject sections that end later than the requested hour.
     if "no classes after" in preferences or "not after" in preferences:
         hour = extract_hour(preferences)
         if hour is not None:
@@ -341,6 +347,7 @@ def section_matches_preferences(section, preferences):
     return True
 
 def meetings_conflict(meetings_a, meetings_b):
+    # Two sections conflict when any meetings overlap on the same day.
     for a in meetings_a:
         for b in meetings_b:
             if a["day"] != b["day"]:
@@ -358,6 +365,7 @@ def meetings_conflict(meetings_a, meetings_b):
 
 
 def can_add_section(schedule_sections, new_section):
+    # A section can be added only if it does not overlap existing selections.
     new_meetings = new_section.get("course_section_meetings", [])
 
     for existing_section in schedule_sections:
@@ -392,6 +400,7 @@ def can_add_section(schedule_sections, new_section):
     return score
 
 def ai_rank_schedule_options(options, preferences):
+    # GPT ranks already-valid options; it does not create or modify CRNs.
     if not options:
         return options
 
@@ -485,6 +494,7 @@ Rules:
         return options
 
 def build_schedule_options(course_ids, sections, max_options=3, allow_partial=True):
+    # Backtracking builds combinations while preserving one section per course path.
     grouped = {}
 
     for section in sections:
@@ -496,6 +506,7 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
     all_options = []
 
     def backtrack(index, current_schedule, skipped_courses):
+        # Try each course in order, carrying any skipped courses for partial schedules.
         if index == len(course_ids):
             if current_schedule:
                 all_options.append({
@@ -524,13 +535,13 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
 
     backtrack(0, [], [])
 
-    # Sort: prefer schedules with more included courses
+    # Prefer schedules with more included courses.
     all_options.sort(
         key=lambda option: len(option.get("sections", [])),
         reverse=True
     )
 
-    # Keep options that are actually different
+    # Keep only distinct CRN combinations.
     unique_options = []
     seen_signatures = set()
 
@@ -548,6 +559,7 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
     return unique_options
     
 def explain_no_results(course_ids, all_sections, filtered_sections, preferences):
+    # Give the frontend specific reasons when strict preference filtering fails.
     explanations = []
 
     sections_by_course = {}
@@ -639,6 +651,7 @@ def explain_no_results(course_ids, all_sections, filtered_sections, preferences)
     return explanations
 
 def get_required_courses_for_program(degree_program_code):
+    # Curriculum rows provide both category metadata and course details.
     response = (
         supabase.table("curriculum_section_courses")
         .select("""
@@ -661,6 +674,7 @@ def get_required_courses_for_program(degree_program_code):
 
 
 def get_completed_courses_for_plan(degree_plan_id):
+    # Completed courses are excluded from generated remaining plans.
     response = (
         supabase.table("degree_plan_completed_courses")
         .select("course_id")
@@ -671,6 +685,7 @@ def get_completed_courses_for_plan(degree_plan_id):
 
 
 def get_prerequisites():
+    # Group prerequisite rows by course for fast validation.
     response = (
         supabase.table("course_prerequisites")
         .select("course_id, prerequisite_course_id")
@@ -696,6 +711,7 @@ def generate_schedule():
     try:
         data = request.get_json(silent=True) or {}
 
+        # Frontend sends normalized course IDs plus optional natural-language preferences.
         course_ids = data.get("course_ids", [])
         preferences = data.get("preferences", "")
         ai_preferences = interpret_ai_preferences(preferences)
@@ -719,7 +735,7 @@ def generate_schedule():
                 "options": []
             })
 
-        # 1. Try strict preference filtering first
+        # Try strict preference filtering first.
         filtered_sections = [
             section for section in sections
             if section_matches_preferences(section, preferences)
@@ -743,7 +759,7 @@ def generate_schedule():
                 "explanations": []
             })
 
-        # 2. If strict failed, explain why
+        # If strict matching fails, explain why before falling back.
         explanations = explain_no_results(
             course_ids,
             sections,
@@ -751,7 +767,7 @@ def generate_schedule():
             preferences
         )
 
-        # 3. Try again without preferences, but still conflict-free
+        # Try again without preferences, but still require conflict-free schedules.
         fallback_options = build_schedule_options(course_ids, sections)
 
         if fallback_options:
@@ -774,7 +790,7 @@ def generate_schedule():
                 "explanations": explanations
             })
 
-        # 4. If even fallback fails, no conflict-free schedule exists
+        # If even fallback fails, no conflict-free schedule exists.
         return jsonify({
             "message": "No conflict-free schedule options found.",
             "course_ids": course_ids,
@@ -791,6 +807,7 @@ def generate_schedule():
     
     
 def get_curriculum_required_credits(degree_program_code):
+    # Required credits by category are used to cap elective planning.
     response = (
         supabase.table("curriculum_sections")
         .select("course_category, required_credits")
@@ -804,6 +821,7 @@ def get_curriculum_required_credits(degree_program_code):
     }    
     
 def get_max_credits_from_preferences(preferences):
+    # Parse simple credit-load preferences without requiring an AI response.
     preferences = preferences.lower()
 
     match = re.search(r'max\s*(\d+)', preferences)
@@ -823,6 +841,7 @@ def get_max_credits_from_preferences(preferences):
     return 17   
 
 def should_include_summer(preferences):
+    # Summer is included only when the student asks for it or requests faster progress.
     preferences = preferences.lower()
 
     if "no summer" in preferences or "without summer" in preferences:
@@ -835,27 +854,28 @@ def should_include_summer(preferences):
 
 
 def compact_degree_plan(semesters, course_info, max_credits, summer_max_credits=9, include_summer=False):
+    # Move single-course semesters earlier when doing so stays within credit limits.
     changed = True
 
     while changed:
         changed = False
 
         for i in range(len(semesters) - 1, 0, -1):
-            # only fix normal one-course semesters
+            # Only compact normal one-course semesters.
             if len(semesters[i]) != 1:
                 continue
 
             course = semesters[i][0]
             course_name = course_info[course]["name"].lower()
 
-            # do NOT move internship
+            # Internship should remain after academic coursework.
             if "internship" in course_name:
                 continue
 
             credits = course_info[course]["credits"]
             
             for j in range(i):
-                # every 3rd semester is summer if summer is included
+                # Every third generated term is summer when summer is enabled.
                 target_is_summer = include_summer and j % 3 == 2
                 target_max = summer_max_credits if target_is_summer else max_credits
                 
@@ -873,6 +893,7 @@ def compact_degree_plan(semesters, course_info, max_credits, summer_max_credits=
     return semesters
 
 def get_course_offering_rules():
+        # Course offering rules restrict generated plans to valid terms.
         response = (
             supabase.table("course_offering_rules")
             .select("course_id, term")
@@ -898,6 +919,7 @@ def generate_degree_plan():
     try:
         data = request.get_json(silent=True) or {}
 
+        # Frontend sends the curriculum, prior progress, and generated semester slots.
         degree_program_code = data.get("degree_program_code")
         completed_courses = data.get("completed_courses", [])
         current_courses = data.get("current_courses", [])
@@ -931,6 +953,7 @@ def generate_degree_plan():
         course_info = {}
         required_course_ids = []
 
+        # Flatten curriculum rows into lookup tables used by the planner.
         for row in all_courses:
             course_id = row["course_id"].replace(" ", "").upper()
             course_data = row.get("courses") or {}
@@ -961,11 +984,13 @@ def generate_degree_plan():
             for c in current_courses
         ])
 
+        # Completed and current courses are treated as already handled.
         blocked_set = completed_set.union(current_set)
 
         internship_courses = []
         senior_project_courses = []
 
+        # Special courses are placed after the main academic sequence.
         for course_id, info in course_info.items():
             name = info["name"].lower()
 
@@ -1016,6 +1041,7 @@ def generate_degree_plan():
         ]
 
         def get_term_for_index(index):
+            # Prefer frontend-provided semester slots so labels match the UI.
             if semester_slots and index < len(semester_slots):
                 return semester_slots[index].get("term")
 
@@ -1027,6 +1053,7 @@ def generate_degree_plan():
             return term_cycle[index % 2]
 
         def get_course_required_hours(course_id):
+            # ASSE2111 has a standing rule even when the DB value is missing.
             if course_id == "ASSE2111":
                 return 30
 
@@ -1070,6 +1097,7 @@ def generate_degree_plan():
             ]    
 
         def can_place_course(course_id, semester_courses, term, taken_course_ids):
+            # Central placement gate for offerings, prerequisites, standing, and credit limits.
             allowed_terms = offering_rules.get(course_id, [])
 
             if allowed_terms and term not in allowed_terms:
@@ -1090,7 +1118,7 @@ def generate_degree_plan():
             if course_info[course_id]["category"] == "Major Electives" and credits_before < 60:
                 return False
             
-            # Prefer not to place more than one Social Science Elective in the same semester
+            # Prefer not to place more than one Social Science Elective in the same semester.
             if course_info[course_id]["category"] == "Social Science Electives":
                 has_social_elective = any(
                     course_info[existing_course]["category"] == "Social Science Electives"
@@ -1120,6 +1148,7 @@ def generate_degree_plan():
             return True
 
         def get_course_level(course_id):
+            # Course number gives a rough freshman/sophomore/junior/senior ordering.
             match = re.search(r'(\d{4})', course_id)
 
             if not match:
@@ -1138,6 +1167,7 @@ def generate_degree_plan():
 
 
         def get_priority(course_id):
+            # Lower priority tuples are scheduled earlier.
             category = course_info[course_id]["category"]
             required_hours = course_info[course_id].get("required_hours") or 0
             course_level = get_course_level(course_id)
@@ -1287,14 +1317,14 @@ Rules:
                     for course_id in semester
                 ])
 
-                # GPT must keep the exact same courses
+                # GPT must keep the exact same courses.
                 if ai_flat != original_flat:
                     generation_warnings.append(
                         "AI plan improvement was rejected because it changed the course list."
                     )
                     return draft_semesters
 
-                # Validate GPT plan using the same backend rules
+                # Validate GPT output using the same backend placement rules.
                 validated_semesters = []
                 validation_taken = set(blocked_set)
 
@@ -1356,6 +1386,7 @@ Rules:
         max_skipped_terms = 12
 
         while remaining_courses and semester_index < MAX_PLAN_TERMS:
+            # Build one semester at a time using currently eligible courses.
             semester_courses = []
             current_term = get_term_for_index(semester_index)
 
@@ -1433,6 +1464,7 @@ Rules:
                 "Some courses may need advisor review."
             )
             
+        # Let GPT improve only after the rule-based draft has been created.
         semesters = ai_improve_degree_plan(semesters)    
 
         # Place senior project once, after normal courses, following DB rules.
@@ -1539,6 +1571,7 @@ def read_degree_audit():
 
         uploaded_file = request.files['file']
 
+        # Degree audits are parsed as text and matched by course-code pattern.
         reader = PdfReader(io.BytesIO(uploaded_file.read()))
 
         text = ""
@@ -1555,6 +1588,7 @@ def read_degree_audit():
         
         in_progress_courses = []
 
+        # Courses inside the in-progress section are separated from completed work.
         in_progress_match = re.search(
             r'In-progress Credits applied:.*?(?=Legend|Disclaimer|$)',
             text,
@@ -1602,6 +1636,7 @@ def verify_override_proof():
         selected_course_code = request.form.get("selected_course_code", "")
         selected_course_name = request.form.get("selected_course_name", "")
 
+        # Send the uploaded proof as a data URL so the model can inspect the image.
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
         image_data_url = f"data:{mime_type};base64,{base64_image}"
 
@@ -1652,6 +1687,7 @@ Rules:
             ]
         )
 
+        # The frontend expects a small JSON approval decision.
         result_text = response.output_text.strip()
         result = json.loads(result_text)
 

@@ -17,12 +17,14 @@ interface SavedPlanViewProps {
 
 export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const navigate = useNavigate();
+  // The saved view keeps a local copy so small changes can update immediately.
   const [plan, setPlan] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [electiveCreditLimits, setElectiveCreditLimits] = useState<Record<string, number>>({});
   const maxHistorySize = 10;
 
   const formatSemesterName = (semesterId: string) => {
+    // Saved semester keys are stored as machine-readable IDs like fall-2025.
     const [type, year] = semesterId.split('-');
 
     if (!type || !year) return semesterId;
@@ -33,6 +35,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   };
 
   const loadSavedPlan = async () => {
+    // Load the saved plan and all persisted child rows needed for display.
     const { data, error } = await supabase
       .from('degree_plans')
       .select(`
@@ -87,6 +90,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
+    // Rebuild semesters in the exact order saved by the planner.
     const semestersArray = (data.degree_plan_semesters || [])
       .sort((a: any, b: any) => a.display_order - b.display_order)
       .map((sem: any) => ({
@@ -112,6 +116,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
           }),
       }));
 
+    // Completed courses are separate from semester courses so past progress remains visible.
     const completedCoursesData = (data.degree_plan_completed_courses || []).map((row: any) => {
       const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
 
@@ -126,6 +131,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       };
     });
 
+    // Use an object keyed by semester ID for fast updates when toggling completion.
     const semestersObject = semestersArray.reduce((acc: any, sem: any) => {
       acc[sem.id] = sem;
       return acc;
@@ -133,6 +139,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
 
 
 
+    // Load the program code separately because the main query focuses on saved plan rows.
     const { data: planMeta, error: planMetaError } = await supabase
       .from('degree_plans')
       .select('degree_program_code')
@@ -145,6 +152,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
+    // Load the full curriculum to detect courses missing from the saved semester layout.
     const { data: curriculumRows, error: curriculumError } = await supabase
       .from('curriculum_section_courses')
       .select(`
@@ -167,6 +175,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
+    // Course objects from the curriculum are used for missing-course warnings.
     const allCourses = (curriculumRows || [])
       .map((row: any) => {
         const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
@@ -188,6 +197,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       .filter(Boolean);
 
     setPlan({
+      // Keep database shape converted to the frontend planning shape.
       id: String(data.id),
       name: data.name,
       semesters: semestersObject,
@@ -207,6 +217,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   };
 
   const loadElectiveCreditLimits = async () => {
+    // Elective limits are needed when summarizing saved plan credits.
     const { data: planMeta, error: planMetaError } = await supabase
       .from('degree_plans')
       .select('degree_program_code')
@@ -240,12 +251,14 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   };
 
   useEffect(() => {
+    // A new selected plan should start with a fresh undo stack.
     loadSavedPlan();
     loadElectiveCreditLimits();
     setHistory([]);
   }, [planId]);
 
   const saveToHistory = (currentPlan: any) => {
+    // Store a deep copy so later state updates do not mutate undo snapshots.
     setHistory(prev => {
       const newHistory = [JSON.parse(JSON.stringify(currentPlan)), ...prev];
       return newHistory.slice(0, maxHistorySize);
@@ -255,10 +268,11 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const handleUndo = async () => {
     if (history.length === 0) return;
 
+    // Undo restores the most recent snapshot persisted before an edit.
     const previousPlan = history[0];
     const previousSemesters = Object.values(previousPlan.semesters || {}) as any[];
 
-    // 1. Remove all current semester-course rows for this plan
+    // Clear current rows before restoring the previous snapshot.
     const { error: deleteCourseRowsError } = await supabase
       .from('degree_plan_semester_courses')
       .delete()
@@ -270,7 +284,6 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
-    // 2. Remove all current semesters for this plan
     const { error: deleteSemestersError } = await supabase
       .from('degree_plan_semesters')
       .delete()
@@ -282,7 +295,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
-    // 3. Reinsert semesters from previous snapshot
+    // Reinsert semesters from the undo snapshot.
     const semesterRows = previousSemesters.map((semester: any, index: number) => ({
       degree_plan_id: Number(planId),
       semester_key: semester.id,
@@ -303,7 +316,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       }
     }
 
-    // 4. Reinsert semester courses from previous snapshot
+    // Reinsert saved courses from the undo snapshot.
     const semesterCourseRows = previousSemesters.flatMap((semester: any) =>
       (semester.courses || [])
         .filter((course: any) => !course.isElectiveOption && !String(course.id).startsWith('temp-placeholder-'))
@@ -328,10 +341,9 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       }
     }
 
-    // 5. Remove the used history snapshot
+    // Remove the used snapshot and reload from the database.
     setHistory(prev => prev.slice(1));
 
-    // 6. Reload from database so UI matches the real saved state
     await loadSavedPlan();
 
     toast.success('Change undone');
@@ -340,12 +352,13 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   const handleToggleSemesterComplete = async (semesterId: string) => {
     if (!plan) return;
 
-    // Save current state to history for local undo UI
+    // Save current state before changing completion so the action can be undone.
     saveToHistory(plan);
 
     const currentSemester = plan.semesters[semesterId];
     if (!currentSemester) return;
 
+    // Completion is stored per semester so saved plans can track progress over time.
     const newCompletedValue = !currentSemester.completed;
 
     const { error } = await supabase
@@ -376,6 +389,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
     setPlan(updatedPlan);
 
     if (newCompletedValue) {
+      // Celebrate only when a semester is newly completed.
       confetti({
         particleCount: 100,
         spread: 70,
@@ -397,6 +411,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
 
     const allCoursesInPlan = plan.allCourses || [];
 
+    // Build a reverse prerequisite lookup so dependent courses are removed together.
     const coursePrereqMap = new Map<string, string[]>();
     allCoursesInPlan.forEach((course: any) => {
       if (course.prerequisites && course.prerequisites.length > 0) {
@@ -404,6 +419,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       }
     });
 
+    // Removing a prerequisite also removes any planned courses that depend on it.
     const coursesToRemove = new Set<string>([courseId]);
 
     const findDependentCourses = (prereqId: string) => {
@@ -419,6 +435,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
 
     const removedCourseNames: string[] = [];
 
+    // Apply the removal across every semester before writing back to Supabase.
     Object.keys(updatedSemesters).forEach((semId) => {
       const semester = updatedSemesters[semId];
 
@@ -431,7 +448,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       });
     });
 
-    // 1. delete all existing semester-course rows for this plan
+    // Rebuild semester-course rows after removing the selected course and dependents.
     const { error: deleteError } = await supabase
       .from('degree_plan_semester_courses')
       .delete()
@@ -443,7 +460,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       return;
     }
 
-    // 2. rebuild remaining rows from updated semesters
+    // Convert the local semester object back into rows for the join table.
     const remainingRows = Object.values(updatedSemesters).flatMap((semester: any, semIndex: number) =>
       semester.courses
         .filter((course: any) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
@@ -479,6 +496,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   };
 
   const handleEdit = () => {
+    // Session storage lets the planner know it should load this saved plan for editing.
     sessionStorage.setItem('editingPlanId', planId);
     sessionStorage.setItem('returnTo', 'saved-plan-view');
     navigate('/drag-drop-planning');
@@ -507,6 +525,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
       }
     });
 
+    // Elective credits count only up to each category's required credit limit.
     const cappedElectiveCredits = Object.entries(electiveTotals).reduce(
       (sum, [category, total]) => {
         const limit = electiveCreditLimits[category] ?? total;
@@ -519,24 +538,24 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
   };
 
   const semesters = Object.values(plan.semesters) as any[];
+  // These summary counts are derived from the loaded plan each render.
   const totalCourses = semesters.reduce((sum, semester) => sum + semester.courses.length, 0);
   const totalCredits = getCappedCredits(
     semesters.flatMap((semester: any) => semester.courses)
   );
   const completedSemesters = semesters.filter(s => s.completed).length;
 
-  // Calculate unassigned courses
+  // Unassigned required courses indicate the saved plan is incomplete.
   const allCourses = plan.allCourses || [];
   const completedCourseIds = new Set(
     (plan.completedCoursesData || []).map((c: any) => c.id)
   );
 
-  // Get all course IDs currently assigned to semesters
   const assignedCourseIds = new Set(
     semesters.flatMap((sem: any) => sem.courses.map((c: any) => c.id))
   );
 
-  // Ignore electives in the warning count
+  // Electives are ignored because placeholders are resolved during planning.
   const unassignedCourses = allCourses.filter(
     (course: any) =>
       !assignedCourseIds.has(course.id) &&
@@ -584,7 +603,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
         </div>
 
         <div className="space-y-4">
-          {/* Warning for unassigned courses */}
+          {/* Warn when required non-elective courses are missing from semesters. */}
           {unassignedCount > 0 && (
             <Alert className="border-orange-300 bg-orange-50 py-2 px-4">
               <div className="flex items-center gap-2 flex-nowrap">
@@ -597,6 +616,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
           )}
 
           {semesters.map((semester: any) => {
+            // Semester cards use capped credits so electives are summarized correctly.
             const semesterCredits = getCappedCredits(semester.courses);
 
             return (

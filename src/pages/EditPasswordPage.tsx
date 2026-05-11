@@ -27,6 +27,7 @@ export function EditPasswordPage({ }: EditPasswordPageProps) {
 
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
+    // Keep client-side validation aligned with the password requirements shown to users.
     if (!passwordRegex.test(newPassword)) {
       toast.error('Password must be at least 8 characters and include uppercase, lowercase, and a number');
       return;
@@ -46,6 +47,7 @@ export function EditPasswordPage({ }: EditPasswordPageProps) {
     setLoading(true);
 
     try {
+      // Supabase sends a nonce that must be supplied before updating the password.
       const { error } = await supabase.auth.reauthenticate();
 
       if (error) {
@@ -80,6 +82,7 @@ export function EditPasswordPage({ }: EditPasswordPageProps) {
     setLoading(true);
 
     try {
+      // The verification code is passed as a nonce for the authenticated password change.
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
         nonce: verificationCode.trim(),

@@ -9,10 +9,12 @@ from datetime import datetime
 import time
 
 def normalize_course_code(course_code):
+    # Database course IDs do not contain spaces.
     return course_code.replace(" ", "").strip()
 
 
 def convert_time_format(raw_time):
+    # PMU times arrive as HHMM-HHMM and are stored as HH:MM.
     parts = raw_time.split("-")
 
     if len(parts) != 2:
@@ -28,26 +30,26 @@ def convert_time_format(raw_time):
 
 
 def split_days(days_text):
+    # Meeting days are stored as individual PMU day codes.
     return list(days_text.strip())
 
 def get_current_term_code():
+    # PMU term codes use the next academic year for Fall and Spring searches.
     now = datetime.now()
     month = now.month
     year = now.year
 
     if 7 <= month <= 10:
-        # Fall
         return f"{year + 1}10"
     elif month >= 11 or month <= 2:
-        # Spring
         if month <= 2:
             return f"{year}20"
         return f"{year + 1}20"
     else:
-        # Summer
         return f"{year}30"
 
 def scrape_courses():
+    # Run Chrome headlessly because the PMU schedule table is populated by JavaScript.
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
@@ -93,6 +95,7 @@ def scrape_courses():
 
         all_rows = []
 
+        # PMU exposes male and female schedules through separate dropdown values.
         for gender_value, gender_label in [("F1", "F"), ("M1", "M")]:
             gender_dropdown.select_by_value(gender_value)
 
@@ -103,6 +106,7 @@ def scrape_courses():
 
             time.sleep(3)
 
+            # Pull all DataTable pages from the browser after the PMU search completes.
             result = driver.execute_async_script("""
                 const callback = arguments[arguments.length - 1];
 
@@ -155,6 +159,7 @@ def scrape_courses():
 
         cleaned_rows = []
 
+        # Normalize raw table cells into section and meeting fields.
         for row in raw_rows:
             if len(row) == 10:
                 raw_course_code = row[1].strip()
@@ -181,7 +186,7 @@ def scrape_courses():
                     "gender": row[9]
                 })
 
-        # Dedupe cleaned rows by CRN
+        # Dedupe cleaned rows by CRN.
         cleaned_rows_map = {}
         for item in cleaned_rows:
             crn = item.get("crn")
@@ -190,7 +195,7 @@ def scrape_courses():
 
         cleaned_rows = list(cleaned_rows_map.values())
 
-        # Build sections_data
+        # Build one section record per CRN.
         sections_map = {}
         for item in cleaned_rows:
             crn = item["crn"]
@@ -219,7 +224,7 @@ def scrape_courses():
 
         sections_data = list(sections_map.values())
 
-        # Build meetings_data
+        # Build one meeting record per CRN/day/start time.
         meetings_map = {}
         for item in cleaned_rows:
             for day in item["days_list"]:

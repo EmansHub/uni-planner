@@ -21,6 +21,7 @@ const generateEnrollmentSemesters = () => {
   let startYear = year;
   if (month < 7) startYear = year - 1;
 
+  // Registration only offers recent enrollment terms up to the current academic year.
   for (let y = startYear - 4; y <= startYear; y++) {
     const nextYearShort = (y + 1).toString().slice(-2);
     semesters.push(`Fall ${y}/${nextYearShort}`);
@@ -30,31 +31,27 @@ const generateEnrollmentSemesters = () => {
   return semesters;
 };
 
-// COMPONENT PROPS
 interface RegisterPageProps {
-  onRegister: (user: User) => void;   // Function to call when registration succeeds
+  onRegister: (user: User) => void;
 }
-
-// REGISTER PAGE COMPONENT
 
 export function RegisterPage({ onRegister }: RegisterPageProps) {
 
-  // STATE MANAGEMENT
-
-  const [email, setEmail] = useState('');                         // User's email
-  const [name, setName] = useState('');                           // User's full name
-  const [major, setMajor] = useState('');                         // User's major
-  const [enrollmentSemester, setEnrollmentSemester] = useState(''); // When user enrolled
-  const [gender, setGender] = useState('');                       // User's gender
-  const [password, setPassword] = useState('');                   // User's password
-  const [confirmPassword, setConfirmPassword] = useState('');     // Password confirmation
-  const [chatbotOpen, setChatbotOpen] = useState(false);          // Help chatbot visibility
-  const [loading, setLoading] = useState(false);                  // Loading state
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [major, setMajor] = useState('');
+  const [enrollmentSemester, setEnrollmentSemester] = useState('');
+  const [gender, setGender] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const [programs, setPrograms] = useState<{ code: string; name: string }[]>([]);
 
   useEffect(() => {
     const fetchPrograms = async () => {
+      // Majors come from the database so registration follows available curricula.
       const { data, error } = await supabase
         .from('degree_programs')
         .select('code, name')
@@ -71,20 +68,15 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
     fetchPrograms();
   }, []);
 
-  // REGISTRATION HANDLER
   const handleRegister = async () => {
     if (!email || !name || !major || !enrollmentSemester || !password || !confirmPassword || !gender) {
       toast.error('Please fill in all fields');
       return;
     }
 
-    //if (!email.endsWith('@pmu.edu.sa')) {
-    //  toast.error('Please use your PMU email');
-    //  return;
-    //}
-
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
+    // Match the password rules shown in the form before creating the account.
     if (!passwordRegex.test(password)) {
       toast.error('Password must be at least 8 characters and include uppercase, lowercase, and a number');
       return;
@@ -98,6 +90,7 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
     setLoading(true);
 
     try {
+      // User metadata is stored with Supabase auth and reused after login.
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -137,26 +130,18 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
     }
   };
 
-  /**
-   * Handle Enter key press in input fields
-   * Allows user to register by pressing Enter
-   */
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleRegister();
     }
   };
 
-  // RENDER
   return (
     <>
-      {/* Main container with gradient background */}
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
 
-        {/* Registration card */}
         <Card className="w-full max-w-md shadow-xl">
 
-          {/* Card header */}
           <CardHeader>
             <Button
               variant="ghost"
@@ -171,10 +156,8 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
             <CardDescription>Create your account to get started</CardDescription>
           </CardHeader>
 
-          {/* Card content with form fields */}
           <CardContent className="space-y-4">
 
-            {/* Email field */}
             <div className="space-y-2">
               <Label htmlFor="email">PMU Email</Label>
               <Input
@@ -188,7 +171,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               />
             </div>
 
-            {/* Name field */}
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input
@@ -202,7 +184,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               />
             </div>
 
-            {/* Major dropdown */}
             <div className="space-y-2">
               <Label htmlFor="major">Major</Label>
               <Select value={major} onValueChange={setMajor}>
@@ -219,7 +200,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               </Select>
             </div>
 
-            {/* Enrollment semester dropdown */}
             <div className="space-y-2">
               <Label htmlFor="enrollment">Enrollment Semester</Label>
               <Select value={enrollmentSemester} onValueChange={setEnrollmentSemester} disabled={loading}>
@@ -236,7 +216,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               </Select>
             </div>
 
-            {/* Gender dropdown */}
             <div className="space-y-2">
               <Label htmlFor="gender">Gender</Label>
               <Select value={gender} onValueChange={setGender} disabled={loading}>
@@ -250,7 +229,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               </Select>
             </div>
 
-            {/* Password field */}
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -264,7 +242,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               />
             </div>
 
-            {/* Confirm password field */}
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
@@ -278,7 +255,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               />
             </div>
 
-            {/* Register button */}
             <Button
               className="w-full"
               onClick={handleRegister}
@@ -287,7 +263,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
               {loading ? 'Creating account...' : 'Register'}
             </Button>
 
-            {/* Login link */}
             <div className="text-center text-sm">
               Already have an account?{' '}
               <button
@@ -302,7 +277,6 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
         </Card>
       </div>
 
-      {/* Help chatbot */}
       <HelpChatbot
         isOpen={chatbotOpen}
         onToggle={() => setChatbotOpen(!chatbotOpen)}

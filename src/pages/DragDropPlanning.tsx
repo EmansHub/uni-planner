@@ -101,6 +101,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const getCourseElectiveCategory = (course: Course) => {
     if (course.electiveCategory) return course.electiveCategory;
 
+    // Saved elective courses may need their category recovered from the option list.
     const matchingElective = availableElectives.find(
       elective => elective.id === course.id
     );
@@ -132,6 +133,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     });
 
+    // Elective categories only contribute up to their curriculum credit limit.
     const cappedElectiveCredits = Object.entries(electiveTotals).reduce(
       (sum, [category, total]) => {
         const limit = electiveCreditLimits[category] ?? total;
@@ -148,12 +150,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       .filter((semester) => semester.completed)
       .flatMap((semester) => semester.courses);
 
+    // Merge original completed courses with courses in semesters marked complete.
     const allCompletedCourses = [
       ...completedCourses,
       ...completedSemesterCourses,
     ];
 
     const uniqueCompletedCourses = Array.from(
+      // Deduplicate by course ID so repeated appearances do not inflate completed credits.
       new Map(allCompletedCourses.map((course) => [course.id, course])).values()
     );
 
@@ -161,6 +165,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const loadPlanFromSupabase = async (targetPlanId: string) => {
+    // Load the plan and its child rows together so the UI can rebuild the saved layout.
     const { data: planRow, error: planError } = await supabase
       .from('degree_plans')
       .select(`
@@ -227,6 +232,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     const prereqMap = new Map<string, string[]>();
 
+    // Group prerequisites by course for fast checks during planning.
     (prereqRows || []).forEach((row: any) => {
       const current = prereqMap.get(row.course_id) || [];
       current.push(row.prerequisite_course_id);
@@ -248,6 +254,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     });
 
 
+    // Preserve saved semester and course order from the database.
     const loadedSemesters: Semester[] = (planRow.degree_plan_semesters || [])
       .sort((a: any, b: any) => a.display_order - b.display_order)
       .map((sem: any) => ({
@@ -338,6 +345,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     });
 
+    // Normalize IDs and codes because saved rows may use either form.
     const plannedCourseIds = new Set<string>();
     const plannedCourseCodes = new Set<string>();
 
@@ -358,6 +366,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     const dedupedMap = new Map<string, Course>();
 
+    // Rebuild the available list from curriculum courses not already planned or completed.
     nonElectiveCourses.forEach((course) => {
       const normalizedId = String(course.id).replace(/\s+/g, '').toUpperCase();
       const normalizedCode = String(course.code).replace(/\s+/g, '').toUpperCase();
@@ -427,11 +436,12 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     const initializePage = async () => {
       setLoadingPlan(true);
 
+      // Shared curriculum rules must be ready before loading or generating a plan.
       await loadOfferingRules();
       await loadTotalRequiredCredits();
       await loadElectiveCreditLimits();
 
-      // If editing existing plan → load from DB
+      // Existing plans are restored from Supabase instead of route state.
       if (planId) {
         await loadPlanFromSupabase(planId);
         return;
@@ -453,6 +463,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       setCompletedCourses(completedCoursesData);
       setAvailableElectives(allElectiveOptions);
 
+      // Courses marked in progress start in the first generated semester.
       const currentCoursesObjects = allCourses.filter((course: Course) =>
         currentCourseIds.includes(course.id)
       );
@@ -482,7 +493,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   }, [planId]);
 
   const getTotalCredits = (semester: Semester) => {
-    // Only count regular courses (not prep courses) toward degree credits
+    // Prep courses count as hours, not degree credits.
     return semester.courses.reduce((sum, course) => {
       if (course.isPrepCourse) return sum;
       return sum + course.credits;
@@ -490,7 +501,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getSemesterHours = (semester: Semester) => {
-    // Count all courses including prep courses for semester hour limits
+    // Semester limits use hours, so prep courses are included.
     return semester.courses.reduce((sum, course) => {
       if (course.isPrepCourse) {
         return sum + (course.semesterHours || 0);
@@ -511,6 +522,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     const totalRequired = totalRequiredCredits;
     const completedCredits = getTotalCompletedCredits();
     const plannedCredits = getTotalPlannedCredits();
+    // Remaining credits never drops below zero for display.
     const remaining = Math.max(0, totalRequired - completedCredits - plannedCredits);
 
     return remaining;
@@ -525,18 +537,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getHoursBeforeSemester = (targetSemesterId: string) => {
-    // Calculate total hours (completed + planned) before a specific semester
-    // This is used for standing requirements (Sophomore=30, Junior=60, Senior=90)
+    // Standing requirements use completed credits plus earlier planned credits.
     const completedHours = getTotalCompletedCredits();
 
-    // Sort semesters chronologically
     const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
     const targetIndex = sortedSemesters.findIndex(s => s.id === targetSemesterId);
 
-    // Get all semesters before the target semester
     const previousSemesters = sortedSemesters.slice(0, targetIndex);
 
-    // Sum credits from previous semesters (excluding prep courses)
     const plannedHours = previousSemesters.reduce((sum, sem) => {
       const semCredits = sem.courses.reduce((cSum, course) => {
         if (course.isPrepCourse) return cSum;
@@ -549,23 +557,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getMaxSemesters = () => {
-    // 6 years = max 6 Fall + max 6 Spring
-    // Summer semesters don't count toward the 6-year limit
+    // The six-year limit applies to Fall and Spring semesters only.
     const fallCount = semesters.filter(s => s.id.includes('fall')).length;
     const springCount = semesters.filter(s => s.id.includes('spring')).length;
     return fallCount >= 6 && springCount >= 6;
   };
 
   const getSemesterOrder = (semesterId: string): number => {
-    // Returns a number for chronological ordering
-    // Academic year 2025/26: Fall 2025, Spring 2026, Summer 2026
-    // Academic year 2026/27: Fall 2026, Spring 2027, Summer 2027
+    // Convert academic terms to sortable values within the same academic year.
     const [type, yearStr] = semesterId.split('-');
     const year = parseInt(yearStr);
 
-    // Fall starts the academic year: Fall 2025 = 20250
-    // Spring/Summer belong to the academic year that started with the previous Fall
-    // So Spring 2026 (part of 2025/26) = 20255, Summer 2026 = 20257
     if (type === 'fall') return year * 10;
     if (type === 'spring') return (year - 1) * 10 + 5;
     if (type === 'summer') return (year - 1) * 10 + 7;
@@ -573,22 +575,21 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const formatSemesterName = (semesterId: string): string => {
-    // Format: Fall 2025/26, Spring 2025/26, Summer 2025/26
+    // Display Spring and Summer under the academic year that started the previous Fall.
     const [type, yearStr] = semesterId.split('-');
     const year = parseInt(yearStr);
     const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
 
     if (type === 'fall') {
-      // Fall 2025 is part of 2025/26 academic year
       return `${capitalizedType} ${year}/${(year + 1).toString().slice(-2)}`;
     } else if (type === 'spring' || type === 'summer') {
-      // Spring 2026 is part of 2025/26 academic year
       return `${capitalizedType} ${year - 1}/${year.toString().slice(-2)}`;
     }
     return `${capitalizedType} ${year}`;
   };
 
   const loadOfferingRules = async () => {
+    // Offering rules restrict courses to Fall, Spring, or Summer terms.
     const { data, error } = await supabase
       .from('course_offering_rules')
       .select('course_id, term');
@@ -619,6 +620,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     let startType: 'fall' | 'spring';
     let startYear: number;
 
+    // Before mid-August, students are still planning from Spring; otherwise start at Fall.
     if (month >= 1 && month < 8) {
       startType = 'spring';
       startYear = year;
@@ -656,6 +658,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const getAvailableSummerSemesters = () => {
+    // A summer term can only be inserted after its matching spring term.
     return semesters
       .filter((semester) => semester.id.includes('spring'))
       .map((springSemester) => {
@@ -708,22 +711,19 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       toast.success(`Added ${formatSemesterName(selectedSummerId)}`);
     }
     else {
-      // Sort semesters chronologically to find the last one
+      // Fall and Spring additions must continue from the latest main semester.
       const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
       const lastSemester = sortedSemesters[sortedSemesters.length - 1];
 
-      // Count existing semesters
       const fallCount = semesters.filter(s => s.id.includes('fall')).length;
       const springCount = semesters.filter(s => s.id.includes('spring')).length;
 
       if (semesterType === 'fall') {
-        // Check Fall limit
         if (fallCount >= 6) {
           toast.error('Maximum 6 Fall semesters allowed');
           return;
         }
 
-        // Fall can only be added after Spring or Summer
         const [lastType, lastYearStr] = lastSemester.id.split('-');
         const lastYear = parseInt(lastYearStr);
 
@@ -732,19 +732,15 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           return;
         }
 
-        // Determine the year for the new Fall semester
         let year: number;
         if (lastType === 'spring') {
-          // After Spring 2026, add Fall 2026
           year = lastYear;
         } else if (lastType === 'summer') {
-          // After Summer 2026, add Fall 2026
           year = lastYear;
         } else {
           year = new Date().getFullYear();
         }
 
-        // Check if this Fall already exists
         if (semesters.find(s => s.id === `fall-${year}`)) {
           toast.error(`Fall ${year}/${(year + 1).toString().slice(-2)} already exists`);
           return;
@@ -758,20 +754,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           completed: false,
         };
 
-        // Insert in chronological order
         const newSemesters = [...semesters, newSemester];
         newSemesters.sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
 
         setSemesters(newSemesters);
         toast.success(`Added ${formatSemesterName(newSemesterId)}`);
       } else if (semesterType === 'spring') {
-        // Check Spring limit
         if (springCount >= 6) {
           toast.error('Maximum 6 Spring semesters allowed');
           return;
         }
 
-        // Spring can only be added after Fall
         const [lastType, lastYearStr] = lastSemester.id.split('-');
         const lastYear = parseInt(lastYearStr);
 
@@ -780,10 +773,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           return;
         }
 
-        // After Fall 2025, add Spring 2026
         const year = lastYear + 1;
 
-        // Check if this Spring already exists
         if (semesters.find(s => s.id === `spring-${year}`)) {
           toast.error(`Spring ${year - 1}/${year.toString().slice(-2)} already exists`);
           return;
@@ -797,7 +788,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           completed: false,
         };
 
-        // Insert in chronological order
         const newSemesters = [...semesters, newSemester];
         newSemesters.sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
 
@@ -811,9 +801,8 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     const semester = semesters.find(s => s.id === semesterId);
     if (!semester) return;
 
-    // Summer semesters can always be removed
+    // Summer is optional, so removing it returns its courses to the available list.
     if (semester.isSummer) {
-      // Move courses back to available
       if (semester.courses.length > 0) {
         setCoursesToTake(prev => [...prev, ...semester.courses]);
       }
@@ -823,12 +812,11 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // For Fall/Spring: Sort semesters chronologically and get the first 8 non-summer semesters
+    // Keep the required four-year Fall/Spring skeleton intact.
     const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
     const nonSummerSemesters = sortedSemesters.filter(s => !s.isSummer);
     const first8NonSummer = nonSummerSemesters.slice(0, 8);
 
-    // Check if this semester is in the first 8 non-summer semesters
     const isInFirst8 = first8NonSummer.some(s => s.id === semesterId);
 
     if (isInFirst8) {
@@ -836,7 +824,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // Move courses back to available
     if (semester.courses.length > 0) {
       setCoursesToTake(prev => [...prev, ...semester.courses]);
     }
@@ -845,21 +832,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     toast.success(`Removed ${formatSemesterName(semesterId)}`);
   };
 
-  // Elective selection handlers
   const handleElectiveClick = (course: Course) => {
-    // Allow clicking on placeholders OR already-selected electives to change them
+    // Placeholders and selected electives both open the replacement dialog.
     if (course.isElectiveOption) {
-      // This is a placeholder
       setSelectedElectivePlaceholder(course);
       setOriginalElectiveToReplace(null);
       setSelectedElectiveCourse(null);
       setShowElectiveDialog(true);
     } else if (course.electiveCategory) {
-      // This is an already-selected elective that can be changed
-      // Store the original course so we can replace it
       setOriginalElectiveToReplace(course);
 
-      // Create a temporary placeholder to represent the category
+      // Use a temporary placeholder so the same selection flow can replace the course.
       const tempPlaceholder: Course = {
         id: `temp-placeholder-${course.electiveCategory}`,
         code: course.electiveCategory,
@@ -881,7 +864,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // Find the selected elective course
     const electiveCourse = availableElectives.find(c => c.id === selectedElectiveCourse);
 
     if (!electiveCourse) {
@@ -889,20 +871,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // Create a copy with the elective category marked
+    // Store the chosen course with its elective category for saving and credit caps.
     const electiveCourseWithCategory = {
       ...electiveCourse,
       electiveCategory: selectedElectivePlaceholder.electiveCategory
     };
 
-    // Determine which ID to replace
-    // If we're changing an existing elective, use the original course's ID
-    // Otherwise, use the placeholder's ID
+    // Replace either the clicked placeholder or the selected elective being changed.
     const idToReplace = originalElectiveToReplace
       ? originalElectiveToReplace.id
       : selectedElectivePlaceholder.id;
 
-    // Replace the specific placeholder/elective that was clicked
     setCoursesToTake(prev => prev.map(c =>
       c.id === idToReplace ? electiveCourseWithCategory : c
     ));
@@ -925,15 +904,13 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     setOriginalElectiveToReplace(null);
   };
 
-  // Simplified drag handlers
   const handleDragStart = (course: Course, source: string) => {
-    // Prevent dragging elective placeholders ONLY
+    // Elective placeholders must become real courses before they can be dragged.
     if (course.isElectiveOption) {
       toast.info('Please select a specific elective course first by clicking on it');
       return;
     }
 
-    // Selected electives (with electiveCategory but not isElectiveOption) CAN be dragged
     setDraggedCourse(course);
     setDraggedFromSemester(source);
   };
@@ -970,6 +947,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       .replace(/\s+/g, '')
       .toUpperCase();
 
+    // The capstone must leave at least one later planned semester.
     if (targetSemester !== 'available' && normalizedDraggedCourseId === 'ASSE4311') {
       const sortedSemesters = [...semesters].sort(
         (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
@@ -990,7 +968,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if target semester is completed
     if (targetSemester !== 'available') {
       const targetSem = semesters.find(s => s.id === targetSemester);
       if (targetSem?.completed) {
@@ -1002,7 +979,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if source semester is completed
     if (draggedFromSemester !== 'available') {
       const sourceSem = semesters.find(s => s.id === draggedFromSemester);
       if (sourceSem?.completed) {
@@ -1014,7 +990,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Same source, do nothing
     if (draggedFromSemester === targetSemester) {
       setDraggedCourse(null);
       setDraggedFromSemester(null);
@@ -1022,7 +997,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // Check semester-specific course availability from DB
+    // Enforce term availability rules before moving the course.
     if (targetSemester !== 'available') {
       if (!isCourseAllowedInSemester(draggedCourse.id, targetSemester)) {
         toast.error(`${draggedCourse.code} is not offered in ${formatSemesterName(targetSemester)}.`);
@@ -1033,32 +1008,26 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check prerequisites when placing in a semester (not when moving to available)
+    // Prerequisites must be completed or planned in an earlier semester.
     if (targetSemester !== 'available' && draggedCourse.prerequisites && draggedCourse.prerequisites.length > 0) {
       const targetSem = semesters.find(s => s.id === targetSemester);
       if (targetSem) {
-        // Check if course can override prerequisites
         const canOverride = restrictions.overrideCourses.some(override => override.courseId === draggedCourse.id && override.verified);
 
         if (!canOverride) {
-          // Sort semesters chronologically
           const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
           const targetIndex = sortedSemesters.findIndex(s => s.id === targetSemester);
 
-          // Get all semesters before the target semester
           const previousSemesters = sortedSemesters.slice(0, targetIndex);
 
-          // Get all courses in previous semesters plus completed courses
           const previousCourseIds = new Set([
             ...completedCourses.map(c => c.id),
             ...previousSemesters.flatMap(sem => sem.courses.map(c => c.id))
           ]);
 
-          // Check if all prerequisites are satisfied
           const missingPrereqs = draggedCourse.prerequisites.filter(prereqId => !previousCourseIds.has(prereqId));
 
           if (missingPrereqs.length > 0) {
-            // Find the prerequisite course names for better error message
             const allCourses = [...coursesToTake, ...completedCourses, ...semesters.flatMap(s => s.courses)];
             const prereqNames = missingPrereqs.map(id => {
               const course = allCourses.find(c => c.id === id);
@@ -1075,7 +1044,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check standing requirements (hour-based prerequisites)
+    // Hour-based standing requirements use credits before the target semester.
     if (targetSemester !== 'available' && draggedCourse.requiredHours) {
       const canOverride = restrictions.overrideCourses.some(
         override => override.courseId === draggedCourse.id && override.verified
@@ -1097,7 +1066,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if course must be alone in semester
+    // Some courses must be the only course in their semester.
     if (targetSemester !== 'available' && draggedCourse.mustBeAlone) {
       const targetSem = semesters.find(s => s.id === targetSemester);
       if (targetSem && targetSem.courses.length > 0) {
@@ -1109,7 +1078,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if target semester already has a course that must be alone
     if (targetSemester !== 'available') {
       const targetSem = semesters.find(s => s.id === targetSemester);
       if (targetSem) {
@@ -1125,7 +1093,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check for duplicate courses in target semester
+    // Avoid duplicates inside a single semester.
     if (targetSemester !== 'available') {
       const targetSem = semesters.find(s => s.id === targetSemester);
       if (targetSem) {
@@ -1140,7 +1108,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Check if target semester would exceed max CREDITS
+    // Credit limits use degree credits; prep course hours are handled separately in badges.
     if (targetSemester !== 'available') {
       const targetSem = semesters.find(s => s.id === targetSemester);
 
@@ -1165,7 +1133,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // Remove from source
+    // Move the dragged course between the available list and semester lists.
     if (draggedFromSemester === 'available') {
       setCoursesToTake(prev => prev.filter(c => c.id !== draggedCourse.id));
     } else {
@@ -1176,7 +1144,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       ));
     }
 
-    // Add to target
     if (targetSemester === 'available') {
       setCoursesToTake(prev => [...prev, draggedCourse]);
       toast.success(`Moved ${draggedCourse.code} back to available`);
@@ -1202,6 +1169,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
       const promptLower = aiPrompt.toLowerCase();
 
+      // Treat faster graduation language as permission to include summer unless rejected.
       const explicitlyNoSummer =
         promptLower.includes("no summer") ||
         promptLower.includes("without summer") ||
@@ -1220,6 +1188,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       const buildPlanningSlotsForAI = (includeSummer: boolean): Semester[] => {
         const baseSemesters = generateDefaultSemesters(MAX_MAIN_SEMESTER_COUNT);
 
+        // Keep the current semester fixed if it already contains in-progress courses.
         const hasCurrentCourses = semesters[0]?.courses.length > 0;
         const slots = hasCurrentCourses ? baseSemesters.slice(1) : baseSemesters;
 
@@ -1300,6 +1269,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
       const courseMap = new Map<string, Course>();
 
+      // Backend IDs are normalized before matching them back to full course objects.
       allKnownCourses.forEach((course) => {
         courseMap.set(course.id.replace(/\s+/g, '').toUpperCase(), course);
       });
@@ -1307,6 +1277,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       const defaultSemesters = aiSemesterSlots.slice(0, data.plan.length);
 
       const backendPlan = data.plan.map((semesterCourseIds: string[], index: number) => {
+        // Keep backend course IDs aligned with the semester slots sent in the request.
         const baseSemester =
           defaultSemesters[index] || {
             id: `generated-${index + 1}`,
@@ -1350,6 +1321,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     if (generatedPlans.length > 0) {
       const currentSemester = semesters[0];
 
+      // Preserve the current semester and apply generated courses after it.
       const finalPlan =
         currentSemester && currentSemester.courses.length > 0
           ? [currentSemester, ...generatedPlans[currentPlanIndex]]
@@ -1382,7 +1354,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     const existingPlanId = planId ? Number(planId) : null;
 
-    // 1. Create or update main degree plan row
+    // Save the parent plan first so all child rows can reference the same ID.
     let savedPlanId = existingPlanId;
 
     if (savedPlanId) {
@@ -1401,7 +1373,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         return;
       }
 
-      // Clear old child rows before re-inserting
+      // Reinsert child rows to keep the saved plan in sync with the current layout.
       await supabase.from('degree_plan_semester_courses').delete().eq('degree_plan_id', savedPlanId);
       await supabase.from('degree_plan_semesters').delete().eq('degree_plan_id', savedPlanId);
       await supabase.from('degree_plan_completed_courses').delete().eq('degree_plan_id', savedPlanId);
@@ -1433,7 +1405,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       return;
     }
 
-    // 2. Save semesters
+    // Save semester containers before saving their courses.
     const semesterRows = semesters.map((semester, index) => ({
       degree_plan_id: savedPlanId,
       semester_key: semester.id,
@@ -1454,7 +1426,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // 3. Save semester courses
+    // Skip unresolved elective placeholders so only real courses are persisted.
     const semesterCourseRows = semesters.flatMap((semester) =>
       semester.courses
         .filter((course) => !course.isElectiveOption && !course.id.startsWith('temp-placeholder-'))
@@ -1480,7 +1452,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // 4. Save completed courses
+    // Completed courses are saved separately from planned semester courses.
     const completedCourseRows = completedCourses.map((course) => ({
       degree_plan_id: savedPlanId,
       course_id: course.id,
@@ -1498,7 +1470,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // 5. Save repeat courses
+    // Repeat courses let completed courses appear again in the available list.
     const repeatRows = restrictions.repeatCourseIds.map((courseId) => ({
       degree_plan_id: savedPlanId,
       course_id: courseId,
@@ -1516,7 +1488,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
       }
     }
 
-    // 6. Save override courses
+    // Override approvals are saved as course IDs; uploaded proof is not persisted here.
     const overrideRows = restrictions.overrideCourses.map((override) => ({
       degree_plan_id: savedPlanId,
       course_id: override.courseId,
@@ -1541,7 +1513,6 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     setShowSaveDialog(false);
     toast.success('Plan saved successfully!');
 
-    // redirect to saved plan view
     navigate('/saved-plan-view');
   };
 
@@ -1553,19 +1524,17 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const handleRepeatCourseChange = (courseId: string) => {
     if (courseId === 'none') return;
 
-    // Check if already added
     if (restrictions.repeatCourseIds.includes(courseId)) {
       toast.info('This course is already selected to repeat');
       return;
     }
 
-    // Add to repeat courses array
+    // Repeated courses are tracked so they do not count twice toward degree credits.
     setRestrictions(prev => ({
       ...prev,
       repeatCourseIds: [...prev.repeatCourseIds, courseId]
     }));
 
-    // Add course to available courses if not already there
     const course = completedCourses.find(c => c.id === courseId);
     if (course && !coursesToTake.find(c => c.id === courseId)) {
       setCoursesToTake(prev => [...prev, course]);
@@ -1573,16 +1542,14 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   };
 
   const handleRemoveRepeatCourse = (courseId: string) => {
-    // Remove from repeat courses array
     setRestrictions(prev => ({
       ...prev,
       repeatCourseIds: prev.repeatCourseIds.filter(id => id !== courseId)
     }));
 
-    // Remove from courses to take
     setCoursesToTake(prev => prev.filter(c => c.id !== courseId));
 
-    // Remove from any semester it might be in
+    // Remove any planned instance of the repeated course.
     setSemesters(prev => prev.map(semester => ({
       ...semester,
       courses: semester.courses.filter(c => c.id !== courseId)
@@ -1660,7 +1627,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         ]
       }));
 
-      // NEW: handle overload approval
+      // Overload approval unlocks the higher next-semester credit limit.
       if (data.type === "overload" && data.approved) {
         setRestrictions(prev => ({
           ...prev,
@@ -1700,6 +1667,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
     if (planId) {
       navigate('/saved-plan-view');
     } else {
+      // Return selections to the course-selection page without placeholder IDs.
       const completedSemesterCourses = completedCourses.map((course) => course.id);
 
       const currentSemesterCourses = semesters
@@ -1721,6 +1689,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
 
     if (!query) return true;
 
+    // Search supports course code, name, or raw ID.
     return (
       course.code.toLowerCase().includes(query) ||
       course.name.toLowerCase().includes(query) ||
@@ -1739,6 +1708,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const getAppliedAIPlanWarnings = () => {
     const warnings: string[] = [];
 
+    // Flag generated Fall/Spring terms that are below full-time load unless internship applies.
     semesters.forEach((semester) => {
       const semesterHours = getSemesterHours(semester);
 
@@ -1884,7 +1854,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                       Select completed courses you want to retake (you can select multiple)
                     </p>
 
-                    {/* Display selected repeat courses */}
+                    {/* Shows repeat courses currently added to the plan. */}
                     {restrictions.repeatCourseIds.length > 0 && (
                       <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
                         <p className="text-xs text-slate-500 mb-2">Selected courses to repeat:</p>
@@ -1924,7 +1894,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                     {getTotalCompletedCredits() >= 90 && (
                       <>
 
-                        {/* Dropdown to add courses */}
+                        {/* Lists eligible courses that can request prerequisite override. */}
                         <Select
                           value=""
                           onValueChange={handleSelectOverrideCourse}
@@ -1959,7 +1929,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                           </SelectContent>
                         </Select>
 
-                        {/* Display selected override courses */}
+                        {/* Shows courses with approved prerequisite overrides. */}
                         {restrictions.overrideCourses.length > 0 && (
                           <div className="space-y-2 border rounded-lg p-3 bg-slate-50">
                             <p className="text-xs text-slate-500">Courses with approved overrides:</p>
@@ -1989,7 +1959,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
               </DialogContent>
             </Dialog>
 
-            {/* Override Prerequisite Upload Dialog */}
+            {/* Verifies uploaded approval before enabling a prerequisite override. */}
             <Dialog open={showOverrideUploadDialog} onOpenChange={(open) => {
               setShowOverrideUploadDialog(open);
               if (!open) {
@@ -2058,7 +2028,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                           className="w-full"
                           onClick={() => {
                             setUploadedProofImage(null);
-                            // Reset file input
+                            // Clear the native file input so the same file can be selected again.
                             const input = document.getElementById('proof-upload') as HTMLInputElement;
                             if (input) input.value = '';
                           }}
@@ -2092,7 +2062,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
               </DialogContent>
             </Dialog>
 
-            {/* Overload Information Dialog */}
+            {/* Reference criteria for users considering overload permission. */}
             <Dialog open={showOverloadInfoDialog} onOpenChange={setShowOverloadInfoDialog}>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
@@ -2254,10 +2224,9 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
           </div>
         </div>
 
-        {/* HORIZONTAL LAYOUT - Semesters LEFT, Available Courses RIGHT */}
+        {/* Main planning workspace: semesters on the left and available courses on the right. */}
         <div className="grid grid-cols-1 md:grid-cols-[1fr_350px] gap-6">
 
-          {/* LEFT SIDE - Semesters in 2x2 grid */}
           <div className="space-y-4">
             <Card className="bg-white/50 backdrop-blur">
               <CardHeader className="py-6">
@@ -2287,7 +2256,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
               {semesters.map((semester, index) => {
                 const totalCredits = getTotalCredits(semester);
                 const semesterHours = getSemesterHours(semester);
-                // Only first incomplete semester gets overload permission if enabled
+                // Overload permission applies only to the next planned semester.
                 const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
                 const isNextSemester = sortedSemesters[0]?.id === semester.id;
                 const maxCredits = getMaxCredits(semester, isNextSemester);
@@ -2300,7 +2269,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                         <CardTitle className="text-lg flex items-center gap-2">
                           {formatSemesterName(semester.id)}
                           {(() => {
-                            // Summer semesters can always be removed
+                            // Summer is optional and can always be removed.
                             if (semester.isSummer) {
                               return (
                                 <Button
@@ -2314,7 +2283,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                               );
                             }
 
-                            // For Fall/Spring: Check if this semester is in the first 8 non-summer semesters
+                            // Required four-year Fall/Spring semesters cannot be removed.
                             const sortedSemesters = [...semesters].sort((a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id));
                             const nonSummerSemesters = sortedSemesters.filter(s => !s.isSummer);
                             const first8NonSummer = nonSummerSemesters.slice(0, 8);
@@ -2487,7 +2456,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
             </div>
           </div>
 
-          {/* RIGHT SIDE - Available Courses */}
+          {/* Available courses can be dragged into semesters or searched by code/name. */}
           <Card className="h-fit md:sticky md:top-4">
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
@@ -2625,7 +2594,7 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
         </div>
       </div>
 
-      {/* Elective Selection Dialog */}
+      {/* Replaces elective placeholders with a specific eligible course. */}
       <Dialog open={showElectiveDialog} onOpenChange={setShowElectiveDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -2644,11 +2613,10 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
                   {availableElectives
                     .filter(course => course.electiveCategory === selectedElectivePlaceholder.electiveCategory)
                     .map(course => {
-                      // Check if this course is already selected/planned (excluding repeats)
+                      // Do not allow the same elective twice unless it is marked for repeat.
                       const isAlreadyPlanned = [...coursesToTake, ...semesters.flatMap(s => s.courses)]
                         .some(c => c.id === course.id && !restrictions.repeatCourseIds.includes(c.id));
 
-                      // Check if this course is completed
                       const isCompleted = completedCourses.some(c => c.id === course.id);
                       const isMarkedForRepeat = restrictions.repeatCourseIds.includes(course.id);
 

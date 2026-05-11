@@ -46,6 +46,7 @@ interface Course {
 export function CourseSelectionPage({ user, onContinue }: CourseSelectionPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  // Course selections are stored as IDs so checkbox updates stay lightweight.
   const [courseSections, setCourseSections] = useState<CourseSection[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [currentCourses, setCurrentCourses] = useState<Set<string>>(new Set());
@@ -57,6 +58,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const loadCourseSections = async () => {
     setLoadingCourses(true);
 
+    // Load section requirements first so elective caps and total credits match the curriculum.
     const { data: sectionMetaRows, error: sectionMetaError } = await supabase
       .from('curriculum_sections')
       .select('degree_program_code, course_category, required_credits, display_order')
@@ -73,6 +75,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     let dbTotalCredits = 0;
 
+    // Store section metadata separately so course rows can be grouped afterward.
     (sectionMetaRows || []).forEach((row: any) => {
       const requiredCredits = Number(row.required_credits || 0);
 
@@ -86,6 +89,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     setCurriculumTotalCredits(dbTotalCredits);
 
+    // Load the actual courses assigned to each curriculum section.
     const { data: sectionRows, error: sectionError } = await supabase
       .from('curriculum_section_courses')
       .select(`
@@ -123,6 +127,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     const prereqMap = new Map<string, string[]>();
 
+    // Group prerequisites by course for quick lookup while building course objects.
     (prereqRows || []).forEach((row: any) => {
       const current = prereqMap.get(row.course_id) || [];
       current.push(row.prerequisite_course_id);
@@ -131,6 +136,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     const grouped = new Map<string, Course[]>();
 
+    // Convert database rows into UI course sections.
     (sectionRows || []).forEach((row: any) => {
       const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
       if (!courseInfo) return;
@@ -156,6 +162,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     const builtSections: CourseSection[] = Array.from(grouped.entries()).map(
       ([title, courses]) => {
         const meta = sectionMetaMap.get(title);
+        // Elective sections need special handling because students choose from options.
         const isElective =
           title.toLowerCase().includes('elective');
 
@@ -163,6 +170,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         let electiveNote: string | undefined;
 
         if (isElective && meta?.requiredCredits) {
+          // Convert required credits into a course count using the usual course credit value.
           const sampleCredits = courses.find(c => c.credits > 0)?.credits || 3;
           maxElectives = Math.ceil(meta.requiredCredits / sampleCredits);
           electiveNote = `${maxElectives} required (${meta.requiredCredits} credits total)`;
@@ -181,6 +189,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     );
 
     builtSections.sort((a, b) => {
+      // Database display order controls curriculum order, with title as a stable fallback.
       const orderA = a.displayOrder ?? 99;
       const orderB = b.displayOrder ?? 99;
 
@@ -190,6 +199,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     setCourseSections(builtSections);
     setExpandedSections(
+      // Required sections start open; elective sections stay collapsed until needed.
       new Set(builtSections.filter(s => !s.isElective).map(s => s.title))
     );
     setLoadingCourses(false);
@@ -204,6 +214,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     if (!state) return;
 
+    // Restore selections when returning from the drag-and-drop planning page.
     if (state.restoredCompletedCourseIds) {
       setCompletedCourses(new Set(state.restoredCompletedCourseIds));
     }
@@ -214,12 +225,13 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   }, [location.state]);
 
   const toggleCompleted = (courseId: string) => {
+    // Copy the Set before changing it so React receives a new state reference.
     const newCompleted = new Set(completedCourses);
     if (newCompleted.has(courseId)) {
       newCompleted.delete(courseId);
     } else {
       newCompleted.add(courseId);
-      // Remove from current if adding to completed
+      // A course cannot be both completed and in progress.
       const newCurrent = new Set(currentCourses);
       newCurrent.delete(courseId);
       setCurrentCourses(newCurrent);
@@ -230,9 +242,10 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const toggleCurrent = (courseId: string, sectionTitle: string) => {
     const section = courseSections.find(s => s.title === sectionTitle);
 
-    // If it's an elective section with limits, check the limit
+    // Elective sections count completed and current courses against the same limit.
     if (section?.isElective && section.maxElectives) {
       const sectionCourseIds = section.courses.map(c => c.id);
+      // Count both selected groups to avoid exceeding the elective requirement.
       const selectedInSection = Array.from(currentCourses).filter(id =>
         sectionCourseIds.includes(id)
       ).length;
@@ -240,7 +253,6 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         sectionCourseIds.includes(id)
       ).length;
 
-      // If trying to select a new course and already at limit
       if (!currentCourses.has(courseId) &&
         selectedInSection + completedInSection >= section.maxElectives) {
         toast.error(`You can only select ${section.maxElectives} course(s) from ${sectionTitle}`);
@@ -253,7 +265,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       newCurrent.delete(courseId);
     } else {
       newCurrent.add(courseId);
-      // Remove from completed if adding to current
+      // A course cannot be both in progress and completed.
       const newCompleted = new Set(completedCourses);
       newCompleted.delete(courseId);
       setCompletedCourses(newCompleted);
@@ -262,10 +274,11 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   };
 
   const markSectionCompleted = (section: CourseSection) => {
+    // Batch section updates locally, then commit both Sets at the end.
     const newCompleted = new Set(completedCourses);
     const newCurrent = new Set(currentCourses);
 
-    // If it's an elective section with limits, only mark up to the limit
+    // Elective sections only mark the number of courses required by the curriculum.
     if (section.isElective && section.maxElectives) {
       const sectionCourseIds = section.courses.map(c => c.id);
       const alreadyCompleted = Array.from(completedCourses).filter(id =>
@@ -277,6 +290,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         return;
       }
 
+      // Only mark the missing number of elective choices.
       const needed = section.maxElectives - alreadyCompleted;
       const coursesToMark = section.courses.slice(0, needed);
 
@@ -289,7 +303,6 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
       toast.success(`Marked ${needed} course(s) as completed from ${section.title}`);
     } else {
-      // For non-elective sections, mark all
       section.courses.forEach(course => {
         newCompleted.add(course.id);
         newCurrent.delete(course.id);
@@ -304,6 +317,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const clearSection = (section: CourseSection) => {
     const sectionCourseIds = section.courses.map(c => c.id);
 
+    // Clearing a section removes both completed and in-progress marks for its courses.
     const newCompleted = new Set(
       Array.from(completedCourses).filter(id => !sectionCourseIds.includes(id))
     );
@@ -319,6 +333,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   };
 
   const toggleSection = (sectionTitle: string) => {
+    // Only elective sections are collapsible in the UI.
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(sectionTitle)) {
       newExpanded.delete(sectionTitle);
@@ -334,6 +349,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     formData.append("file", file);
 
     try {
+      // The local parser returns course IDs that can be matched against the loaded curriculum.
       const response = await fetch("http://127.0.0.1:5000/read-degree-audit", {
         method: "POST",
         body: formData,
@@ -349,6 +365,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       const newCompleted = new Set(completedCourses);
       const newCurrent = new Set(currentCourses);
 
+      // Completed audit courses override any current-course marks.
       data.completed_courses.forEach((courseId) => {
         const match = allCourses.find(course => course.id === courseId);
 
@@ -358,6 +375,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         }
       });
 
+      // In-progress audit courses are ignored if already marked completed.
       data.in_progress_courses.forEach((courseId) => {
         const match = allCourses.find(course => course.id === courseId);
 
@@ -384,6 +402,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
     let matchedCount = 0;
 
+    // Match transcript results by either display code or normalized course ID.
     extractedCourses.forEach(extractedCourse => {
       const matchingCourse = allCourses.find(
         c => c.code === extractedCourse.code || c.id === extractedCourse.id
@@ -407,6 +426,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const getCappedCredits = (courses: Course[], section?: CourseSection) => {
     const total = courses.reduce((sum, course) => sum + course.credits, 0);
 
+    // Elective credits are capped at the section requirement even if extra choices are selected.
     if (!section?.isElective || !section.requiredCredits) {
       return total;
     }
@@ -415,31 +435,30 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   };
 
   const handleNext = () => {
-    // Build the list of courses to show in drag-drop
+    // Build the remaining course list for drag-and-drop planning.
     const coursesToShow: Course[] = [];
 
     courseSections.forEach(section => {
       if (section.isElective && section.maxElectives) {
-        // For electives with limits, only include selected ones and create placeholders for unfulfilled
+        // Keep selected electives and add placeholders for any remaining elective requirements.
+        // IDs are used only to compare selections within this elective section.
         const sectionCourseIds = section.courses.map(c => c.id);
         const completedInSection = section.courses.filter(c => completedCourses.has(c.id));
         const currentInSection = section.courses.filter(c => currentCourses.has(c.id));
 
-        // Add the specific courses that are in progress
         currentInSection.forEach(course => {
           if (!completedCourses.has(course.id)) {
             coursesToShow.push(course);
           }
         });
 
-        // Calculate how many more are needed
+        // Completed electives reduce how many placeholders still need planning.
         const totalSelected = completedInSection.length + currentInSection.length;
         const stillNeeded = section.maxElectives - totalSelected;
 
-        // Create placeholder courses for unfulfilled requirements
         for (let i = 0; i < stillNeeded; i++) {
           const placeholderId = `PLACEHOLDER_${section.title.replace(/\s/g, '_')}_${i}`;
-          const credits = section.courses[0]?.credits || 3; // Use credit from first course in section
+          const credits = section.courses[0]?.credits || 3; // Use the section's usual credit value.
 
           coursesToShow.push({
             id: placeholderId,
@@ -449,13 +468,12 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
               : `Select from ${section.title} (${i + 1} of ${stillNeeded})`,
             credits: credits,
             department: 'ELECTIVE',
-            isElectiveOption: true, // Mark as elective option
-            electiveCategory: section.title, // Store the category name
-            maxElectivesAllowed: section.maxElectives, // Store the max allowed
+            isElectiveOption: true,
+            electiveCategory: section.title,
+            maxElectivesAllowed: section.maxElectives,
           });
         }
       } else {
-        // For required courses, show all that aren't completed
         const requiredNotCompleted = section.courses.filter(c =>
           !completedCourses.has(c.id)
         );
@@ -463,14 +481,14 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       }
     });
 
-    // Collect all completed courses with their full data
+    // Pass full completed course objects so saved plans can include prior progress.
     const completedCoursesData = courseSections
       .flatMap(s => s.courses)
       .filter(c => completedCourses.has(c.id));
 
     const completedIds = Array.from(completedCourses);
 
-    // Collect all available elective options (not placeholders, just the actual elective courses)
+    // Keep actual elective options available for later placeholder replacement.
     const allElectiveOptions: Course[] = [];
     courseSections.forEach(section => {
       if (section.isElective) {
@@ -483,6 +501,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         });
       }
     });
+    // Reset selected saved-plan ID because this path starts a new plan.
     onContinue(null);
 
     navigate('/drag-drop-planning', {
@@ -498,10 +517,12 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   };
 
   const completedCredits = courseSections.reduce((sum, section) => {
+    // Summary totals use capped elective credits to match the curriculum requirement.
     const selectedCourses = section.courses.filter(c => completedCourses.has(c.id));
     return sum + getCappedCredits(selectedCourses, section);
   }, 0);
   const currentCredits = courseSections.reduce((sum, section) => {
+    // Current credits use the same elective cap as completed credits.
     const selectedCourses = section.courses.filter(c => currentCourses.has(c.id));
     return sum + getCappedCredits(selectedCourses, section);
   }, 0);
