@@ -19,11 +19,12 @@ export function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
   const [planToDelete, setPlanToDelete] = useState<string | null>(null);
   const navigate = useNavigate();
 
-useEffect(() => {
+  useEffect(() => {
     loadPlans();
   }, []);
 
   const loadPlans = async () => {
+    // Saved plans are user-specific, so load the current auth user first.
     const { data: authData } = await supabase.auth.getUser();
     const authUser = authData.user;
 
@@ -55,6 +56,7 @@ useEffect(() => {
       return;
     }
 
+    // Keep the default plan pinned above the rest.
     const sortedPlans = [...(data || [])].sort((a, b) => {
       if (a.is_default && !b.is_default) return -1;
       if (!a.is_default && b.is_default) return 1;
@@ -66,11 +68,13 @@ useEffect(() => {
   };
 
   const handleStartNewPlan = () => {
+    // A null plan ID tells the planning flow to create a fresh plan.
     onSelectPlan(null);
     navigate('/course-selection');
   };
 
   const handleSelectPlan = (planId: string) => {
+    // Store the selected plan ID before opening the read-only saved view.
     onSelectPlan(planId);
     navigate('/saved-plan-view');
   };
@@ -78,6 +82,7 @@ useEffect(() => {
   const handleDeletePlan = async (planId: string) => {
     const numericPlanId = Number(planId);
 
+    // Delete child rows first so the parent plan can be removed cleanly.
     const { error: completedError } = await supabase
       .from('degree_plan_completed_courses')
       .delete()
@@ -160,6 +165,7 @@ useEffect(() => {
       return;
     }
 
+    // Only one plan should be default, so clear all defaults before setting the new one.
     const { error: clearError } = await supabase
       .from('degree_plans')
       .update({ is_default: false })
@@ -201,8 +207,7 @@ useEffect(() => {
         <h1 className="text-3xl mb-8">Degree Planning</h1>
 
         <div className="grid gap-6">
-          {/* Start New Plan */}
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-dashed border-orange-300 bg-white/50"
             onClick={handleStartNewPlan}
           >
@@ -221,7 +226,6 @@ useEffect(() => {
             </CardHeader>
           </Card>
 
-          {/* Saved Plans */}
           {savedPlans.length > 0 && (
             <>
               <div className="mt-4">
@@ -244,9 +248,8 @@ useEffect(() => {
                 return (
                   <Card
                     key={plan.id}
-                    className={`cursor-pointer hover:shadow-lg transition-shadow ${
-                      isDefault ? 'border-2 border-[#E87722]' : ''
-                    }`}
+                    className={`cursor-pointer hover:shadow-lg transition-shadow ${isDefault ? 'border-2 border-[#E87722]' : ''
+                      }`}
                     onClick={() => handleSelectPlan(String(plan.id))}
                   >
                     <CardHeader className="pb-6">
@@ -297,7 +300,7 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Delete Confirmation Dialog */}
+        {/* Confirms deletion before removing the plan and its child records. */}
         <AlertDialog open={!!planToDelete} onOpenChange={(open) => !open && setPlanToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>

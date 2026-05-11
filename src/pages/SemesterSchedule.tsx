@@ -46,11 +46,14 @@ const TIME_SLOTS = [
   '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
 ];
 
+// The schedule grid follows PMU's Sunday-through-Thursday teaching week.
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
 
+// Internship is planned in degree plans but does not need a weekly class schedule.
 const HIDDEN_SCHEDULE_COURSES = new Set(['GEIT4361']);
 
 const mapMeetingDay = (day: string) => {
+  // PMU schedule data uses one-letter meeting day codes.
   const normalized = String(day).trim().toUpperCase();
 
   if (normalized === 'U') return 'Sunday';
@@ -64,15 +67,15 @@ const mapMeetingDay = (day: string) => {
 
 export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const navigate = useNavigate();
-  // Track which section IDs are added (visible on the grid)
+  // Added sections appear on the grid; chosen sections are the final CRNs.
   const [addedSections, setAddedSections] = useState<Set<string>>(new Set());
-  // Track which specific sections are chosen (clicked on the grid)
   const [chosenSections, setChosenSections] = useState<Set<string>>(new Set());
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [savedSchedules, setSavedSchedules] = useState<any[]>([]);
   const [courseFilter, setCourseFilter] = useState<'all' | 'degree-plan'>('all');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
+  // AI options are kept separate until the student applies one to the grid.
   const [aiScheduleOptions, setAiScheduleOptions] = useState<AIScheduleOption[]>([]);
   const [selectedAIOption, setSelectedAIOption] = useState(0);
   const [previewingAI, setPreviewingAI] = useState(false);
@@ -84,7 +87,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const [defaultPlan, setDefaultPlan] = useState<any | null>(null);
   const [prerequisiteMap, setPrerequisiteMap] = useState<Record<string, string[]>>({});
 
-    const loadDefaultPlan = async () => {
+  const loadDefaultPlan = async () => {
+    // The starred degree plan determines the default schedule filter.
     const { data: plan, error: planError } = await supabase
       .from('degree_plans')
       .select('id, name, is_default, has_overload')
@@ -97,6 +101,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Load semester containers before loading their courses.
     const { data: semesters, error: semestersError } = await supabase
       .from('degree_plan_semesters')
       .select('semester_key, completed, is_summer, display_order')
@@ -132,12 +137,14 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Completed courses are excluded from schedule suggestions.
     const completedCourseIds = (completedRows || []).map((row: any) =>
       normalizeCourseCode(row.course_id)
     );
 
     const semestersMap: any = {};
 
+    // Convert saved plan rows into the same shape used by schedule filters.
     (semesters || []).forEach((sem: any) => {
       semestersMap[sem.semester_key] = {
         id: sem.semester_key,
@@ -147,6 +154,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       };
     });
 
+    // Attach each saved course to its semester bucket.
     (semesterCourses || []).forEach((row: any) => {
       if (!semestersMap[row.semester_key]) return;
 
@@ -164,8 +172,9 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const sectionsSource = dbSections;
-  
+
   const groupedSections = sectionsSource.reduce((acc, section) => {
+    // Group by course so users can add or compare all sections for one course.
     if (!acc[section.courseCode]) {
       acc[section.courseCode] = [];
     }
@@ -173,8 +182,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return acc;
   }, {} as Record<string, CourseSection[]>);
 
-  // Load saved schedules on mount
   React.useEffect(() => {
+    // Load all schedule data once when the page opens.
     setCurrentSemester(getCurrentSemester());
     loadSavedSchedules();
     loadSections();
@@ -184,18 +193,19 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   }, []);
 
   const loadSavedSchedules = async () => {
-      try {
-        const { data: authData } = await supabase.auth.getUser();
-        const authUser = authData.user;
+    try {
+      // Saved schedules belong to the signed-in user, not just the profile object.
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData.user;
 
-        if (!authUser) {
-          toast.error('You must be logged in');
-          return;
-        }
+      if (!authUser) {
+        toast.error('You must be logged in');
+        return;
+      }
 
-        const { data, error } = await supabase
-          .from('saved_schedules')
-          .select(`
+      const { data, error } = await supabase
+        .from('saved_schedules')
+        .select(`
             id,
             name,
             created_at,
@@ -203,43 +213,45 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
               crn
             )
           `)
-          .eq('user_id', authUser.id)
-          .order('created_at', { ascending: false });
+        .eq('user_id', authUser.id)
+        .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error loading saved schedules:', error);
-          toast.error('Failed to load saved schedules');
-          return;
-        }
-
-        const formattedSchedules = (data || []).map((schedule: any, index: number) => {
-          const sectionRows = schedule.saved_schedule_sections ?? [];
-
-          return {
-            id: schedule.id.toString(),
-            name: schedule.name || `Schedule ${index + 1}`,
-            createdAt: schedule.created_at,
-            chosenSectionIds: sectionRows.map((item: any) => item.crn),
-            sections: sectionRows.map((item: any) => ({
-              crn: item.crn,
-            })),
-          };
-        });
-
-        setSavedSchedules(formattedSchedules);
-      } catch (err) {
-        console.error('Unexpected loadSavedSchedules error:', err);
+      if (error) {
+        console.error('Error loading saved schedules:', error);
         toast.error('Failed to load saved schedules');
+        return;
       }
-    };
 
-    const loadSections = async () => {
+      // Saved schedule rows store CRNs; section details come from the current offerings.
+      const formattedSchedules = (data || []).map((schedule: any, index: number) => {
+        const sectionRows = schedule.saved_schedule_sections ?? [];
 
-      setSectionsLoading(true);
+        return {
+          id: schedule.id.toString(),
+          name: schedule.name || `Schedule ${index + 1}`,
+          createdAt: schedule.created_at,
+          chosenSectionIds: sectionRows.map((item: any) => item.crn),
+          sections: sectionRows.map((item: any) => ({
+            crn: item.crn,
+          })),
+        };
+      });
 
-      const { data, error } = await supabase
-        .from('course_sections')
-        .select(`
+      setSavedSchedules(formattedSchedules);
+    } catch (err) {
+      console.error('Unexpected loadSavedSchedules error:', err);
+      toast.error('Failed to load saved schedules');
+    }
+  };
+
+  const loadSections = async () => {
+
+    setSectionsLoading(true);
+
+    // Load current PMU offerings with meeting times for the weekly grid.
+    const { data, error } = await supabase
+      .from('course_sections')
+      .select(`
           crn,
           course_id,
           section,
@@ -257,63 +269,66 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
             end_time
           )
         `)
-        .order('crn', { ascending: true });
+      .order('crn', { ascending: true });
 
-      if (error) {
-        console.error('Error loading sections:', error);
-        toast.error('Failed to load sections');
-        setSectionsLoading(false);
-        return;
-      }
-
-      const formatted: CourseSection[] = (data || []).map((row: any) => {
-        const meetings = row.course_section_meetings || [];
-        const days = meetings.map((m: any) => mapMeetingDay(m.day));
-
-        const sortedMeetings = [...meetings].sort((a: any, b: any) =>
-          String(a.start_time).localeCompare(String(b.start_time))
-        );
-
-        const firstMeeting = sortedMeetings[0];
-        const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
-        const formatTime = (value: string) => String(value).slice(0, 5);
-        const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
-        const courseName = courseInfo?.name || '';
-
-        return {
-          id: row.crn,
-          crn: row.crn,
-          courseCode: row.course_id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
-          courseName: courseName,
-          section: row.section,
-          sectionType: row.section_type,
-          instructor: row.instructor || 'TBA',
-          credits: row.credits,
-          days,
-          startTime: firstMeeting ? formatTime(firstMeeting.start_time) : '00:00',
-          endTime: lastMeeting ? formatTime(lastMeeting.end_time) : '00:00',
-          location: row.room || 'TBA',
-          gender: row.gender,
-        };
-      });
-
-      const userGenderCode =
-        user.gender === 'Female' ? 'F' :
-        user.gender === 'Male' ? 'M' :
-        user.gender;
-
-      const visibleSections = formatted.filter(section => {
-        const normalizedCourseCode = normalizeCourseCode(section.courseCode);
-
-        return (
-          !HIDDEN_SCHEDULE_COURSES.has(normalizedCourseCode) &&
-          section.gender === userGenderCode
-        );
-      });
-
-      setDbSections(visibleSections);
+    if (error) {
+      console.error('Error loading sections:', error);
+      toast.error('Failed to load sections');
       setSectionsLoading(false);
-    };  
+      return;
+    }
+
+    const formatted: CourseSection[] = (data || []).map((row: any) => {
+      const meetings = row.course_section_meetings || [];
+      const days = meetings.map((m: any) => mapMeetingDay(m.day));
+
+      // First and last meeting define the visual block range on the grid.
+      const sortedMeetings = [...meetings].sort((a: any, b: any) =>
+        String(a.start_time).localeCompare(String(b.start_time))
+      );
+
+      const firstMeeting = sortedMeetings[0];
+      const lastMeeting = sortedMeetings[sortedMeetings.length - 1];
+      const formatTime = (value: string) => String(value).slice(0, 5);
+      const courseInfo = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+      const courseName = courseInfo?.name || '';
+
+      return {
+        id: row.crn,
+        crn: row.crn,
+        courseCode: row.course_id.replace(/([A-Z]+)(\d+)/, '$1 $2'),
+        courseName: courseName,
+        section: row.section,
+        sectionType: row.section_type,
+        instructor: row.instructor || 'TBA',
+        credits: row.credits,
+        days,
+        startTime: firstMeeting ? formatTime(firstMeeting.start_time) : '00:00',
+        endTime: lastMeeting ? formatTime(lastMeeting.end_time) : '00:00',
+        location: row.room || 'TBA',
+        gender: row.gender,
+      };
+    });
+
+    // PMU section data uses M/F while the profile stores readable labels.
+    const userGenderCode =
+      user.gender === 'Female' ? 'F' :
+        user.gender === 'Male' ? 'M' :
+          user.gender;
+
+    // Show only sections matching the user's gender and hide non-scheduled internship courses.
+    const visibleSections = formatted.filter(section => {
+      const normalizedCourseCode = normalizeCourseCode(section.courseCode);
+
+      return (
+        !HIDDEN_SCHEDULE_COURSES.has(normalizedCourseCode) &&
+        section.gender === userGenderCode
+      );
+    });
+
+    setDbSections(visibleSections);
+    setSectionsLoading(false);
+  };
 
   const loadCurriculumCourses = async () => {
     const userProgramCode = user.major;
@@ -331,6 +346,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const ids = new Set<string>();
 
+    // Curriculum IDs limit the "All Courses" tab to courses in the user's program.
     (data || []).forEach((row: any) => {
       ids.add(normalizeCourseCode(row.course_id));
     });
@@ -339,6 +355,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const loadPrerequisites = async () => {
+    // Prerequisites prevent unavailable courses from showing in schedule suggestions.
     const { data, error } = await supabase
       .from('course_prerequisites')
       .select('course_id, prerequisite_course_id');
@@ -361,7 +378,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
       map[courseId].push(prereqId);
     });
-    
+
     setPrerequisiteMap(map);
   };
 
@@ -369,8 +386,8 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return defaultPlan;
   };
 
-  // Helper function to normalize course codes for comparison
   const normalizeCourseCode = (code: string) => {
+    // Normalization lets IDs like ASSE4311 and labels like ASSE 4311 match.
     return String(code)
       .replace(/"/g, '')
       .replace(/\s+/g, '')
@@ -378,9 +395,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getCurrentSemester = () => {
+    // Determine the active registration term from today's date.
     const now = new Date();
 
-    const month = now.getMonth() + 1; // 1–12
+    const month = now.getMonth() + 1;
     const year = now.getFullYear();
 
     let term: 'Fall' | 'Spring' | 'Summer';
@@ -388,12 +406,10 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     let planKey = '';
 
     if (month >= 7 && month <= 10) {
-      // July → October
       term = 'Fall';
       academicYearStart = year;
       planKey = `fall-${year}`;
     } else if (month >= 11 || month <= 2) {
-      // Nov → Feb
       term = 'Spring';
 
       if (month <= 2) {
@@ -404,7 +420,6 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         planKey = `spring-${year + 1}`;
       }
     } else {
-      // March → June
       term = 'Summer';
       academicYearStart = year - 1;
       planKey = `summer-${year}`;
@@ -422,20 +437,16 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const getNextSemesterCourses = () => {
     const plan = getDefaultDegreePlan();
     if (!plan) return new Set<string>();
-    
+
     const courses = new Set<string>();
-    // Get all courses from uncompleted semesters only
     const semesters = Object.values(plan.semesters || {}) as any[];
-    
-    // Iterate through all semesters and only include courses from uncompleted ones
+
+    // Include courses from uncompleted semesters so students can schedule remaining work.
     for (const semester of semesters) {
-      // Skip completed semesters
       if (semester.completed) continue;
-      
-      // Add courses from uncompleted semesters
+
       if (semester.courses && semester.courses.length > 0) {
         semester.courses.forEach((course: any) => {
-          // Store normalized version for matching
           courses.add(normalizeCourseCode(course.code));
         });
       }
@@ -443,15 +454,14 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     return courses;
   };
 
-  // Get all courses that exist in the user's degree plan (for filtering "All Courses")
   const getAllPlanCourses = () => {
     const plan = getDefaultDegreePlan();
     if (!plan) return new Set<string>();
-    
+
     const courses = new Set<string>();
     const semesters = Object.values(plan.semesters || {}) as any[];
-    
-    // Get all courses from the plan (completed and uncompleted)
+
+    // Include both completed and uncompleted courses when checking the plan contents.
     for (const semester of semesters) {
       if (semester.courses && semester.courses.length > 0) {
         semester.courses.forEach((course: any) => {
@@ -461,7 +471,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     }
     return courses;
   };
-  
+
 
   const getCompletedCourses = () => {
     const plan = getDefaultDegreePlan();
@@ -469,12 +479,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const courses = new Set<string>();
 
-    // Completed courses marked during course selection
+    // Include courses completed before the plan was built.
     (plan.completedCourseIds || []).forEach((courseId: string) => {
       courses.add(normalizeCourseCode(courseId));
     });
 
-    // Courses inside semesters marked as completed
+    // Include courses from semesters later marked completed.
     const semesters = Object.values(plan.semesters || {}) as any[];
 
     for (const semester of semesters) {
@@ -491,6 +501,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getCurrentSemesterCourses = () => {
+    // This helper returns courses assigned to the current plan term.
     const plan = getDefaultDegreePlan();
 
     if (!plan || !currentSemester) return new Set<string>();
@@ -513,6 +524,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const currentKey = currentSemester.planKey;
 
+    // The previous planned term represents the courses already in progress.
     const previousSemesterKey =
       currentKey.startsWith('summer-')
         ? currentKey.replace('summer-', 'spring-')
@@ -540,16 +552,19 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const completedCourses = getCompletedCourses();
 
+    // A course is schedulable only when every prerequisite has been completed.
     return requiredPrereqs.every(prereqId => completedCourses.has(prereqId));
   };
 
   const getFilteredSections = () => {
+    // Build the visible course list from the selected tab and search input.
     let filtered: Record<string, CourseSection[]> = {};
 
     const completedCourses = getCompletedCourses();
     const currentlyTakingCourses = getCurrentlyTakingCourses();
 
     if (courseFilter === 'all') {
+      // "All Courses" still respects curriculum, completion, current courses, and prerequisites.
       Object.entries(groupedSections).forEach(([courseCode, sections]) => {
         const normalizedCode = courseCode.replace(/\s/g, '').toUpperCase();
 
@@ -560,7 +575,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
         if (
           isInCurriculum &&
-          !isCompleted && 
+          !isCompleted &&
           !isCurrentlyTaking &&
           prerequisitesMet
         ) {
@@ -568,6 +583,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
         }
       });
     } else {
+      // Degree-plan mode shows only courses assigned to the current planned semester.
       const plan = getDefaultDegreePlan();
 
       if (!plan || !currentSemester) {
@@ -596,6 +612,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     }
 
     if (searchQuery.trim()) {
+      // Search can match course code, course name, or instructor.
       const query = searchQuery.toLowerCase().trim();
       const searchFiltered: Record<string, CourseSection[]> = {};
 
@@ -636,6 +653,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   ];
 
   const getCourseColor = (courseCode: string) => {
+    // Hash the course code so each course keeps a stable color across renders.
     let hash = 0;
     for (let i = 0; i < courseCode.length; i++) {
       hash = courseCode.charCodeAt(i) + ((hash << 5) - hash);
@@ -644,63 +662,60 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const toggleSection = (sectionId: string) => {
-    // Find the section to get its CRN
     const section = sectionsSource.find(s => s.id === sectionId);
     if (!section) return;
-    
-    // Find all sections with the same CRN (parts of the same course meeting at different times)
+
+    // Same-CRN rows represent the same section meeting on multiple days.
     const relatedSections = sectionsSource.filter(s => s.crn === section.crn);
     const relatedIds = relatedSections.map(s => s.id);
-    
+
     const newAdded = new Set(addedSections);
     const newChosen = new Set(chosenSections);
-    
+
     if (newAdded.has(sectionId)) {
-      // Remove all related sections
       relatedIds.forEach(id => {
         newAdded.delete(id);
         newChosen.delete(id);
       });
       toast.success('Section removed from schedule');
     } else {
-      // Add all related sections
       relatedIds.forEach(id => {
         newAdded.add(id);
       });
       toast.success('Section added to schedule');
     }
-    
+
     setAddedSections(newAdded);
     setChosenSections(newChosen);
   };
 
   const toggleAllSectionsOfCourse = (courseCode: string) => {
+    // Course-level toggling adds or removes every section card for that course.
     const sections = groupedSections[courseCode] || [];
     const anySectionAdded = sections.some(s => addedSections.has(s.id));
-    
+
     const newAdded = new Set(addedSections);
     const newChosen = new Set(chosenSections);
-    
+
     if (anySectionAdded) {
-      // Remove all sections of this course
       sections.forEach(section => {
         newAdded.delete(section.id);
         newChosen.delete(section.id);
       });
       toast.success(`All ${courseCode} sections removed`);
     } else {
-      // Add all sections of this course
       sections.forEach(section => {
         newAdded.add(section.id);
       });
       toast.success(`All ${courseCode} sections added`);
     }
-    
+
     setAddedSections(newAdded);
     setChosenSections(newChosen);
   };
 
   const handleSectionClick = (section: CourseSection) => {
+    // Clicking inside the grid chooses a final section, unlike adding from the list.
     const relatedSections = sectionsSource.filter(s => s.crn === section.crn);
     const relatedIds = relatedSections.map(s => s.id);
 
@@ -710,25 +725,25 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       relatedIds.forEach(id => newChosen.delete(id));
       toast.info('Section unselected');
     } else {
-    if (wouldExceedCreditLimit(section)) {
-      toast.error(`This schedule cannot exceed ${getMaxScheduleCredits()} credit hours.`);
-      return;
-    }
+      if (wouldExceedCreditLimit(section)) {
+        toast.error(`This schedule cannot exceed ${getMaxScheduleCredits()} credit hours.`);
+        return;
+      }
 
-    const courseSections = groupedSections[section.courseCode] || [];
+      const courseSections = groupedSections[section.courseCode] || [];
 
       courseSections.forEach(s => {
         const isSameCourse = s.courseCode === section.courseCode;
 
         if (!isSameCourse) return;
 
-        // If selected section is LEC_LAB, remove all LEC, LAB, and LEC_LAB for this course
+        // A combined lecture/lab replaces separate lecture and lab choices.
         if (section.sectionType === 'LEC_LAB') {
           newChosen.delete(s.id);
           return;
         }
 
-        // If selected section is LEC or LAB, remove same type and LEC_LAB
+        // Separate sections replace the same type and any combined option.
         if (s.sectionType === section.sectionType || s.sectionType === 'LEC_LAB') {
           newChosen.delete(s.id);
         }
@@ -742,6 +757,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const hasTimeConflict = (section1: CourseSection, section2: CourseSection) => {
+    // Time conflicts matter only when two sections share at least one meeting day.
     const hasCommonDay = section1.days.some(day => section2.days.includes(day));
     if (!hasCommonDay) return false;
 
@@ -758,6 +774,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getSectionState = (section: CourseSection): 'chosen' | 'possible' | 'impossible' => {
+    // State drives opacity, cursor, and whether a grid item can be selected.
     if (!addedSections.has(section.id)) return 'impossible';
 
     if (chosenSections.has(section.id)) return 'chosen';
@@ -768,17 +785,15 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const courseSections = groupedSections[section.courseCode] || [];
 
+    // Block sections that conflict with the chosen lecture/lab structure.
     const blockedBySameCourseChoice = courseSections.some(s => {
       if (s.id === section.id) return false;
       if (!chosenSections.has(s.id)) return false;
 
-      // If another LEC_LAB is chosen, block all other sections for this course
       if (s.sectionType === 'LEC_LAB') return true;
 
-      // If this section is LEC_LAB, block it when any LEC or LAB is already chosen
       if (section.sectionType === 'LEC_LAB') return true;
 
-      // Normal rule: LEC blocks other LEC, LAB blocks other LAB
       return s.sectionType === section.sectionType;
     });
 
@@ -795,10 +810,12 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getVisibleSections = () => {
+    // Only added sections are rendered onto the weekly grid.
     return sectionsSource.filter(section => addedSections.has(section.id));
   };
 
   const getAddedCourses = () => {
+    // Course-level summaries need unique course codes from added section IDs.
     const courses = new Set<string>();
     addedSections.forEach(sectionId => {
       const section = sectionsSource.find(s => s.id === sectionId);
@@ -809,7 +826,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   const getTotalCreditHours = () => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
-    // Remove duplicates by CRN to avoid counting credits multiple times
+    // Count each CRN once even when it has multiple meeting rows.
     const uniqueCRNs = new Map<string, CourseSection>();
     chosenSectionsList.forEach(section => {
       if (!uniqueCRNs.has(section.crn)) {
@@ -820,16 +837,17 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getMaxScheduleCredits = () => {
-  if (currentSemester?.term === 'Summer' || currentSemester?.planKey?.startsWith('summer-')) {
-    return 9;
-  }
+    // Summer has a lower cap; overload permission raises regular semester capacity.
+    if (currentSemester?.term === 'Summer' || currentSemester?.planKey?.startsWith('summer-')) {
+      return 9;
+    }
 
-  if (defaultPlan?.has_overload) {
-    return 22;
-  }
+    if (defaultPlan?.has_overload) {
+      return 22;
+    }
 
-  return 20;
-};
+    return 20;
+  };
 
   const wouldExceedCreditLimit = (section: CourseSection) => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
@@ -840,6 +858,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       uniqueCRNs.set(s.crn, s);
     });
 
+    // Include the candidate section when checking the projected total.
     uniqueCRNs.set(section.crn, section);
 
     const totalCredits = Array.from(uniqueCRNs.values()).reduce(
@@ -851,6 +870,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const getLecLabWarnings = () => {
+    // Warnings are computed from final chosen sections, not merely visible options.
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
     const warnings: string[] = [];
 
@@ -874,6 +894,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
       const courseHasLectures = allCourseSections.some(s => s.sectionType === 'LEC');
 
+      // Warn when a course has separate lectures and labs but only one type is selected.
       if (hasCombined) return;
 
       if (courseHasLabs && courseHasLectures) {
@@ -892,7 +913,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
   const handleCopyCRNs = () => {
     const chosenSectionsList = sectionsSource.filter(s => chosenSections.has(s.id));
-    // Remove duplicates by CRN (since sections with same CRN are now selected together)
+    // Copy each selected CRN once for registration.
     const uniqueCRNs = new Map<string, CourseSection>();
     chosenSectionsList.forEach(section => {
       if (!uniqueCRNs.has(section.crn)) {
@@ -909,7 +930,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handlePrintSchedule = () => {
-    // Add print styles temporarily
+    // Temporary print styles hide controls and print only the weekly grid.
     const style = document.createElement('style');
     style.id = 'print-styles';
     style.textContent = `
@@ -957,18 +978,17 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       }
     `;
     document.head.appendChild(style);
-    
-    // Print
+
     window.print();
-    
-    // Remove print styles after a delay
+
+    // Remove print overrides after the browser opens the print dialog.
     setTimeout(() => {
       const styleElement = document.getElementById('print-styles');
       if (styleElement) {
         styleElement.remove();
       }
     }, 1000);
-    
+
     toast.success('Opening print dialog...');
   };
 
@@ -994,7 +1014,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       const allCourseSections = sectionsSource.filter(s => s.courseCode === courseCode);
       const courseHasLabs = allCourseSections.some(s => s.sectionType === 'LAB');
 
-      // LEC_LAB counts as complete by itself
+      // Combined lecture/lab sections satisfy both required pieces.
       if (hasCombined) return;
 
       if (courseHasLabs) {
@@ -1011,6 +1031,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
       return;
     }
 
+    // Persist only CRNs because section details can be reloaded from current offerings.
     const chosenCrns = Array.from(
       new Set(chosenSectionsList.map(section => section.crn))
     );
@@ -1030,6 +1051,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
 
     const scheduleName = `Schedule ${savedSchedules.length + 1}`;
 
+    // Create the schedule parent row first, then attach selected CRNs below.
     const { data: savedSchedule, error: scheduleError } = await supabase
       .from('saved_schedules')
       .insert({
@@ -1067,6 +1089,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const handleLoadSchedule = (schedule: any) => {
     const chosenCrns = new Set(schedule.chosenSectionIds || []);
 
+    // Expand saved CRNs back to all matching section IDs in the current data.
     const matchingSectionIds = sectionsSource
       .filter(section => chosenCrns.has(section.crn))
       .map(section => section.id);
@@ -1079,6 +1102,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleDeleteSchedule = async (scheduleId: string) => {
+    // Deleting the parent schedule removes it from the saved menu after reload.
     const { error } = await supabase
       .from('saved_schedules')
       .delete()
@@ -1095,6 +1119,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   };
 
   const handleResetSchedule = () => {
+    // Reset clears both visible options and final chosen CRNs.
     setAddedSections(new Set());
     setChosenSections(new Set());
     toast.success('Schedule reset! Start building a new schedule.');
@@ -1103,83 +1128,85 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
   const handleGenerateAISchedule = async () => {
     setAiGenerating(true);
 
-  const response = await fetch("http://127.0.0.1:5000/generate-schedule", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    course_ids: Array.from(getAddedCourses()).map((code) =>
-    normalizeCourseCode(code)
-  ),
-    preferences: aiPrompt,
-    max_credits: getMaxScheduleCredits(),
-  }),
-});
+    // Backend returns conflict-free options for the currently added courses.
+    const response = await fetch("http://127.0.0.1:5000/generate-schedule", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        course_ids: Array.from(getAddedCourses()).map((code) =>
+          normalizeCourseCode(code)
+        ),
+        preferences: aiPrompt,
+        max_credits: getMaxScheduleCredits(),
+      }),
+    });
 
-const data = await response.json();
+    const data = await response.json();
 
-console.log("Backend schedule result:", data);
+    // The backend may return explanations instead of options when constraints are too tight.
+    console.log("Backend schedule result:", data);
 
-if (!data.options || data.options.length === 0) {
-  setAiScheduleOptions([]);
-  setAiGenerating(false);
+    if (!data.options || data.options.length === 0) {
+      setAiScheduleOptions([]);
+      setAiGenerating(false);
 
-  data.explanations.forEach((reason: string) => {
-  toast.error(reason, {
-    duration: 10000,
-    style: {
-      whiteSpace: "normal",
-      wordBreak: "break-word",
-      maxWidth: "500px",
-      lineHeight: "1.4",
-    },
-  });
-});
+      data.explanations.forEach((reason: string) => {
+        toast.error(reason, {
+          duration: 10000,
+          style: {
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+            maxWidth: "500px",
+            lineHeight: "1.4",
+          },
+        });
+      });
 
-  return;
-}
+      return;
+    }
 
-const backendOptions: AIScheduleOption[] = data.options.map((option: any, index: number) => {
-  const optionSections = option.sections
-    .map((backendSection: any) => {
-      const crn = backendSection.crn;
-      return sectionsSource.find((section) => section.crn === crn);
-    })
-    .filter(Boolean) as CourseSection[];
+    const backendOptions: AIScheduleOption[] = data.options.map((option: any, index: number) => {
+      // Translate backend CRNs back into full frontend section objects.
+      const optionSections = option.sections
+        .map((backendSection: any) => {
+          const crn = backendSection.crn;
+          return sectionsSource.find((section) => section.crn === crn);
+        })
+        .filter(Boolean) as CourseSection[];
 
-  //show skipped courses
-  if (option.skipped_courses && option.skipped_courses.length > 0) {
-    toast.warning(
-  <div className="whitespace-normal break-words max-w-md leading-snug">
-    Option {index + 1}: Removed {option.skipped_courses.join(", ")} due to time conflicts.
-  </div>,
-  { duration: 6000 }
-);
-  }
+      // Surface courses the backend removed because no conflict-free section fit.
+      if (option.skipped_courses && option.skipped_courses.length > 0) {
+        toast.warning(
+          <div className="whitespace-normal break-words max-w-md leading-snug">
+            Option {index + 1}: Removed {option.skipped_courses.join(", ")} due to time conflicts.
+          </div>,
+          { duration: 6000 }
+        );
+      }
 
-  return {
-    id: `backend-option-${index}`,
-    sections: optionSections,
-    skipped_courses: option.skipped_courses || [],
-  };
-});
+      return {
+        id: `backend-option-${index}`,
+        sections: optionSections,
+        skipped_courses: option.skipped_courses || [],
+      };
+    });
 
-setAiScheduleOptions(backendOptions);
-setSelectedAIOption(0);
-setAiGenerating(false);
-toast.success(`Generated ${backendOptions.length} schedule option(s)!`);
-return;
-    
-    // If no sections added, automatically add sections from degree plan or all courses
+    setAiScheduleOptions(backendOptions);
+    setSelectedAIOption(0);
+    setAiGenerating(false);
+    toast.success(`Generated ${backendOptions.length} schedule option(s)!`);
+    return;
+
+    // Unreachable fallback kept from the earlier local generator path.
     let sectionsToUse = new Set(addedSections);
     let autoAddedMessage = '';
-    
+
     if (sectionsToUse.size === 0) {
       const nextSemesterCourses = getNextSemesterCourses();
-      
+
       if (nextSemesterCourses.size > 0) {
-        // Add all sections from degree plan courses
         Object.entries(groupedSections).forEach(([courseCode, sections]) => {
           const normalizedCode = normalizeCourseCode(courseCode);
           if (nextSemesterCourses.has(normalizedCode)) {
@@ -1188,37 +1215,33 @@ return;
         });
         autoAddedMessage = 'Using courses from your Degree Plan. ';
       } else {
-        // Add all sections from all courses
         Object.values(groupedSections).forEach(sections => {
           sections.forEach(section => sectionsToUse.add(section.id));
         });
         autoAddedMessage = 'Using all available courses. ';
       }
-      
-      // Update the state
+
       setAddedSections(sectionsToUse);
     }
-    
+
     toast.info(autoAddedMessage + 'AI is generating optimal schedules...');
-    
+
     setTimeout(() => {
-      // Generate 3 different schedule options
       const options: AIScheduleOption[] = [];
       const addedCoursesList = getAddedCourses();
-      
+
       for (let i = 0; i < 3; i++) {
         const scheduleSections: CourseSection[] = [];
         const chosenIds = new Set<string>();
-        
+
         addedCoursesList.forEach(courseCode => {
           const sections = groupedSections[courseCode] || [];
           const addedCourseSections = sections.filter(s => sectionsToUse.has(s.id));
-          
-          // Apply different strategies for each option
+
+          // Each fallback option uses a different simple ordering strategy.
           let filtered = [...addedCourseSections];
-          
+
           if (i === 0) {
-            // Option 1: Prefer MW classes
             filtered.sort((a, b) => {
               const aMW = a.days.includes('Monday') && a.days.includes('Wednesday');
               const bMW = b.days.includes('Monday') && b.days.includes('Wednesday');
@@ -1227,7 +1250,6 @@ return;
               return 0;
             });
           } else if (i === 1) {
-            // Option 2: Prefer TTh classes
             filtered.sort((a, b) => {
               const aTTh = a.days.includes('Tuesday') && a.days.includes('Thursday');
               const bTTh = b.days.includes('Tuesday') && b.days.includes('Thursday');
@@ -1236,15 +1258,14 @@ return;
               return 0;
             });
           } else {
-            // Option 3: Prefer compact schedule
             filtered.sort((a, b) => {
               const aStart = parseInt(a.startTime.replace(':', ''));
               const bStart = parseInt(b.startTime.replace(':', ''));
               return aStart - bStart;
             });
           }
-          
-          // Pick first non-conflicting section
+
+          // Pick the first section that does not overlap the partial schedule.
           for (const section of filtered) {
             const hasConflict = scheduleSections.some(chosen => hasTimeConflict(section, chosen));
             if (!hasConflict) {
@@ -1254,7 +1275,7 @@ return;
             }
           }
         });
-        
+
         if (scheduleSections.length > 0) {
           options.push({
             id: `option-${i}`,
@@ -1262,7 +1283,7 @@ return;
           });
         }
       }
-      
+
       setAiScheduleOptions(options);
       setSelectedAIOption(0);
       setAiGenerating(false);
@@ -1276,6 +1297,7 @@ return;
     const selectedOption = aiScheduleOptions[selectedAIOption];
     if (!selectedOption) return;
 
+    // Applying an AI option makes those sections both visible and selected.
     const sectionIds = new Set(selectedOption.sections.map(s => s.id));
 
     setAddedSections(sectionIds);
@@ -1288,6 +1310,7 @@ return;
   };
 
   const handleCancelAI = () => {
+    // Closing the dialog clears generated options so the next run starts fresh.
     setShowAIDialog(false);
     setAiScheduleOptions([]);
     setAiPrompt('');
@@ -1299,11 +1322,11 @@ return;
     return TIME_SLOTS.indexOf(time);
   };
 
-  // Convert time string (HH:MM) to minutes since start of day (08:00)
   const timeToMinutes = (time: string) => {
+    // Grid positioning is measured from 08:00.
     const [hours, minutes] = time.split(':').map(Number);
     const totalMinutes = hours * 60 + minutes;
-    const startOfDay = 8 * 60; // 08:00 in minutes
+    const startOfDay = 8 * 60;
     return totalMinutes - startOfDay;
   };
 
@@ -1311,7 +1334,7 @@ return;
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
     const durationMinutes = endMinutes - startMinutes;
-    // Each 30-minute slot is 17px tall (balanced compact view)
+    // Each 30-minute slot is 17px tall in the compact grid.
     return (durationMinutes / 30) * 17;
   };
 
@@ -1319,8 +1342,8 @@ return;
     const slotMinutes = timeToMinutes(slotTime);
     const startMinutes = timeToMinutes(startTime);
     const offsetMinutes = startMinutes - slotMinutes;
-    // Convert minutes to pixels (17px per 30 minutes)
-    return (offsetMinutes / 30) * 17 + 2; // +2 for padding
+    // Add a small top offset so cards do not touch the grid border.
+    return (offsetMinutes / 30) * 17 + 2;
   };
 
   if (sectionsLoading) {
@@ -1372,7 +1395,7 @@ return;
                         className="flex items-center justify-between p-3 cursor-pointer"
                         onSelect={(e) => e.preventDefault()}
                       >
-                        <div 
+                        <div
                           className="flex-1 cursor-pointer"
                           onClick={() => handleLoadSchedule(schedule)}
                         >
@@ -1402,6 +1425,7 @@ return;
             </DropdownMenu>
 
             <Dialog open={showAIDialog} onOpenChange={(open) => {
+              // Closing from outside the dialog should also clear AI state.
               if (!open) handleCancelAI();
               else setShowAIDialog(open);
             }}>
@@ -1418,7 +1442,7 @@ return;
                     Describe your preferences (optional) and we'll generate optimal schedule options for you
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 {aiScheduleOptions.length === 0 ? (
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
@@ -1435,7 +1459,7 @@ return;
 
                     <Button onClick={handleGenerateAISchedule} disabled={aiGenerating}>
                       {aiGenerating ? (
-                      <>
+                        <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                           Generating schedule...
                         </>
@@ -1446,7 +1470,7 @@ return;
                         </>
                       )}
                     </Button>
-                    
+
                     {addedSections.size === 0 && (
                       <p className="text-sm text-center text-slate-500">
                         Please select courses to generating a schedule.
@@ -1463,7 +1487,7 @@ return;
                       </Button>
                     </div>
 
-                    {/* Carousel */}
+                    {/* Generated options can be previewed before applying one. */}
                     <div className="relative">
                       <div className="flex items-center gap-4">
                         <Button
@@ -1475,7 +1499,7 @@ return;
                           <ChevronLeft className="w-4 h-4" />
                         </Button>
 
-                        <Card 
+                        <Card
                           className="flex-1 cursor-pointer transition-all hover:shadow-lg"
                           onClick={() => setPreviewingAI(!previewingAI)}
                         >
@@ -1495,7 +1519,7 @@ return;
                                 {(aiScheduleOptions[selectedAIOption]?.sections || []).map((section) => {
                                   const color = getCourseColor(section.courseCode);
                                   return (
-                                    <div 
+                                    <div
                                       key={section.id}
                                       className={`p-3 rounded-lg border ${color.border} ${color.bg}`}
                                     >
@@ -1516,11 +1540,11 @@ return;
                                   );
                                 })}
                                 {aiScheduleOptions[selectedAIOption]?.skipped_courses &&
-                                aiScheduleOptions[selectedAIOption].skipped_courses.length > 0 && (
-                                <div className="text-sm text-red-500 mt-2 whitespace-normal break-words">
-                                Skipped: {aiScheduleOptions[selectedAIOption].skipped_courses.join(", ")} (time conflict)
-                                </div>
-                                )}
+                                  aiScheduleOptions[selectedAIOption].skipped_courses.length > 0 && (
+                                    <div className="text-sm text-red-500 mt-2 whitespace-normal break-words">
+                                      Skipped: {aiScheduleOptions[selectedAIOption].skipped_courses.join(", ")} (time conflict)
+                                    </div>
+                                  )}
                                 <p className="text-xs text-center text-slate-500 mt-4">
                                   Click card to preview on weekly grid
                                 </p>
@@ -1528,7 +1552,7 @@ return;
                             ) : (
                               <div className="space-y-2">
                                 <p className="text-sm text-center text-slate-600">Visual Preview</p>
-                                {/* Mini Weekly Grid Preview */}
+                                {/* Compact preview uses the same day/time matching as the main grid. */}
                                 <div className="border rounded-lg overflow-hidden bg-white">
                                   <div className="grid grid-cols-6 gap-px bg-slate-200">
                                     <div className="bg-slate-50 p-1 text-xs"></div>
@@ -1537,7 +1561,7 @@ return;
                                         {day.substring(0, 3)}
                                       </div>
                                     ))}
-                                    
+
                                     {['08:00', '10:00', '12:00', '14:00', '16:00'].flatMap(time => [
                                       <div key={`time-${time}`} className="bg-white p-1 text-xs text-slate-500">{time}</div>,
                                       ...DAYS.map(day => {
@@ -1549,7 +1573,7 @@ return;
                                         );
                                         const section = sectionsAtTime?.[0];
                                         const color = section ? getCourseColor(section.courseCode) : null;
-                                        
+
                                         return (
                                           <div key={`${time}-${day}`} className="bg-white p-1 relative min-h-[30px]">
                                             {section && (
@@ -1585,9 +1609,8 @@ return;
                         {aiScheduleOptions.map((_, index) => (
                           <div
                             key={index}
-                            className={`h-2 w-2 rounded-full transition-all ${
-                              index === selectedAIOption ? 'bg-[#E87722] w-6' : 'bg-slate-300'
-                            }`}
+                            className={`h-2 w-2 rounded-full transition-all ${index === selectedAIOption ? 'bg-[#E87722] w-6' : 'bg-slate-300'
+                              }`}
                           />
                         ))}
                       </div>
@@ -1625,16 +1648,15 @@ return;
           </div>
         </div>
 
-        {/* HORIZONTAL LAYOUT - Courses LEFT, Schedule Grid RIGHT */}
+        {/* Main schedule builder: section list on the left, weekly grid on the right. */}
         <div className="grid grid-cols-1 md:grid-cols-[350px_1fr] gap-6">
-          
-          {/* LEFT SIDE - Section List */}
+
           <Card className="h-fit md:sticky md:top-4">
             <CardHeader>
               <div className="flex items-center justify-between mb-2">
                 <CardTitle>Available Sections</CardTitle>
               </div>
-              
+
               <Tabs value={courseFilter} onValueChange={(v) => setCourseFilter(v as 'all' | 'degree-plan')} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="all">All Courses</TabsTrigger>
@@ -1644,7 +1666,7 @@ return;
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-              
+
               <div className="relative mt-3">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
@@ -1655,80 +1677,80 @@ return;
                   className="pl-9"
                 />
               </div>
-              
+
               <p className="text-xs text-slate-600 mt-2">Click sections to add/remove from schedule</p>
             </CardHeader>
             <CardContent>
-              <div className="h-[calc(100vh-340px)] overflow-y-auto pr-2"> 
+              <div className="h-[calc(100vh-340px)] overflow-y-auto pr-2">
                 <div className="space-y-2">
                   {Object.entries(getFilteredSections()).length === 0 ? (
                     <div className="text-center py-8 text-slate-500 text-xs">
-                      {courseFilter === 'degree-plan' 
+                      {courseFilter === 'degree-plan'
                         ? 'No courses found from uncompleted semesters in your starred degree plan. Make sure you have a starred plan with uncompleted courses.'
                         : 'No courses available'
                       }
                     </div>
                   ) : (
                     Object.entries(getFilteredSections()).map(([courseCode, sections]) => {
-                    const color = getCourseColor(courseCode);
-                    
-                    return (
-                      <div key={courseCode} className="space-y-1.5">
-                        <div 
-                          className="flex items-center gap-2 px-2 cursor-pointer hover:bg-slate-50 rounded py-1 transition-colors group"
-                          onClick={() => toggleAllSectionsOfCourse(courseCode)}
-                          title="Click to add/remove all sections"
-                        >
-                          <div className={`w-2.5 h-2.5 rounded-sm ${color.bg} border ${color.border}`}></div>
-                          <h4 className="font-medium text-xs flex-1">{courseCode} - {sections[0].courseName}</h4>
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {sections[0].credits} cr
-                          </Badge>
-                          <span className="text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {sections.some(s => addedSections.has(s.id)) ? 'Remove all' : 'Add all'}
-                          </span>
-                        </div>
-                        
-                        {sections.map(section => {
-                          const isAdded = addedSections.has(section.id);
-                          
-                          return (
-                            <div
-                              key={section.id}
-                              onClick={() => toggleSection(section.id)}
-                              className={`border rounded-lg p-2 ml-4 cursor-pointer transition-all ${
-                                isAdded 
-                                  ? `${color.bg} ${color.border} shadow-sm` 
-                                  : 'bg-white border-slate-200 hover:shadow-md hover:border-slate-300'
-                              }`}
-                            >
-                              <div className="space-y-0.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-medium">
-                                    {section.sectionType} {section.section} • CRN: {section.crn}
-                                  </span>
-                                  <Badge variant="outline" className="text-[9px] px-1 py-0">
-                                    {section.days.map(d => d.substring(0, 3)).join(', ')}
-                                  </Badge>
+                      const color = getCourseColor(courseCode);
+
+                      return (
+                        <div key={courseCode} className="space-y-1.5">
+                          <div
+                            className="flex items-center gap-2 px-2 cursor-pointer hover:bg-slate-50 rounded py-1 transition-colors group"
+                            onClick={() => toggleAllSectionsOfCourse(courseCode)}
+                            title="Click to add/remove all sections"
+                          >
+                            <div className={`w-2.5 h-2.5 rounded-sm ${color.bg} border ${color.border}`}></div>
+                            <h4 className="font-medium text-xs flex-1">{courseCode} - {sections[0].courseName}</h4>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {sections[0].credits} cr
+                            </Badge>
+                            <span className="text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {sections.some(s => addedSections.has(s.id)) ? 'Remove all' : 'Add all'}
+                            </span>
+                          </div>
+
+                          {sections.map(section => {
+                            // Added sections appear on the grid but are not final until selected.
+                            const isAdded = addedSections.has(section.id);
+
+                            return (
+                              <div
+                                key={section.id}
+                                onClick={() => toggleSection(section.id)}
+                                className={`border rounded-lg p-2 ml-4 cursor-pointer transition-all ${isAdded
+                                    ? `${color.bg} ${color.border} shadow-sm`
+                                    : 'bg-white border-slate-200 hover:shadow-md hover:border-slate-300'
+                                  }`}
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium">
+                                      {section.sectionType} {section.section} • CRN: {section.crn}
+                                    </span>
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0">
+                                      {section.days.map(d => d.substring(0, 3)).join(', ')}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-[10px] text-slate-600">{section.instructor}</p>
+                                  <p className="text-[10px] text-slate-500">
+                                    {section.startTime} - {section.endTime}
+                                  </p>
                                 </div>
-                                <p className="text-[10px] text-slate-600">{section.instructor}</p>
-                                <p className="text-[10px] text-slate-500">
-                                  {section.startTime} - {section.endTime}
-                                </p>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
+                            );
+                          })}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
-              </div> 
+              </div>
             </CardContent>
           </Card>
 
-          {/* RIGHT SIDE - Schedule Grid */}
+          {/* Weekly grid shows added sections and lets users choose final CRNs. */}
           <Card id="weekly-schedule-print">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -1739,7 +1761,7 @@ return;
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-slate-600">
-                  {addedSections.size === 0 
+                  {addedSections.size === 0
                     ? 'Select sections from the list to build your schedule'
                     : 'Click on sections in the grid to select them'
                   }
@@ -1756,10 +1778,11 @@ return;
                 {addedSections.size > 0 && (
                   <div className="flex flex-wrap gap-3">
                     {Array.from(getAddedCourses()).sort().map(courseCode => {
+                      // The legend shows the chosen section details when one exists.
                       const color = getCourseColor(courseCode);
                       const sections = groupedSections[courseCode] || [];
                       const chosenSection = sections.find(s => chosenSections.has(s.id));
-                      
+
                       return (
                         <div key={courseCode} className="flex items-center gap-2">
                           <div className={`w-3 h-3 rounded-sm ${color.bg} border ${color.border}`}></div>
@@ -1794,63 +1817,59 @@ return;
                         {time}
                       </div>,
                       ...DAYS.map(day => {
-                        // Get all sections for this day that start at or within this time slot
-                        // A time slot represents a 60-minute period starting at 'time' (now showing only full hours)
+                        // A visible grid row represents the 60-minute period starting at this time.
                         const timeMinutes = timeToMinutes(time);
                         const nextSlotMinutes = timeMinutes + 60;
-                        
+
                         const sectionsAtTimeAndDay = getVisibleSections()
                           .filter(section => {
                             if (!section.days.includes(day)) return false;
                             const sectionStartMinutes = timeToMinutes(section.startTime);
-                            // Include section if it starts within this 60-minute slot
                             return sectionStartMinutes >= timeMinutes && sectionStartMinutes < nextSlotMinutes;
                           });
-                        
-                        // Build overlap groups: find all sections on this day that overlap with each other
+
+                        // Build overlap groups so conflicting cards share horizontal space.
                         const allSectionsOnDay = getVisibleSections().filter(s => s.days.includes(day));
                         const overlapGroups = new Map<string, Set<string>>(); // section.id -> Set of overlapping section IDs
-                        
+
                         allSectionsOnDay.forEach(section => {
                           const sectionStart = timeToMinutes(section.startTime);
                           const sectionEnd = timeToMinutes(section.endTime);
-                          
+
                           const overlappingIds = new Set<string>([section.id]);
-                          
+
                           allSectionsOnDay.forEach(otherSection => {
                             if (otherSection.id === section.id) return;
-                            
+
                             const otherStart = timeToMinutes(otherSection.startTime);
                             const otherEnd = timeToMinutes(otherSection.endTime);
-                            
-                            // Check if time ranges overlap
+
                             if (sectionStart < otherEnd && sectionEnd > otherStart) {
                               overlappingIds.add(otherSection.id);
                             }
                           });
-                          
+
                           overlapGroups.set(section.id, overlappingIds);
                         });
-                        
-                        // Merge overlap groups to ensure consistency
-                        // If A overlaps with B and B overlaps with C, then A, B, C should all be in the same group
+
+                        // Merge connected overlaps so related conflicts use consistent widths.
                         const processedSections = new Set<string>();
                         const finalOverlapGroups = new Map<string, string[]>(); // section.id -> sorted array of all IDs in group
-                        
+
                         allSectionsOnDay.forEach(section => {
                           if (processedSections.has(section.id)) return;
-                          
-                          // Find all sections in this overlap group using BFS
+
+                          // Use BFS to collect every section connected by overlapping times.
                           const group = new Set<string>();
                           const queue = [section.id];
-                          
+
                           while (queue.length > 0) {
                             const currentId = queue.shift()!;
                             if (group.has(currentId)) continue;
-                            
+
                             group.add(currentId);
                             processedSections.add(currentId);
-                            
+
                             const overlappingIds = overlapGroups.get(currentId);
                             if (overlappingIds) {
                               overlappingIds.forEach(id => {
@@ -1860,29 +1879,27 @@ return;
                               });
                             }
                           }
-                          
-                          // Sort the group for consistent ordering
+
                           const sortedGroup = Array.from(group).sort();
-                          
-                          // Assign this sorted group to all sections in it
+
                           sortedGroup.forEach(id => {
                             finalOverlapGroups.set(id, sortedGroup);
                           });
                         });
-                        
+
                         const totalSections = sectionsAtTimeAndDay.length;
-                        
+
                         return (
                           <div key={`${time}-${day}`} className="bg-white p-0.5 min-h-[34px] relative">
                             {sectionsAtTimeAndDay.map((section, index) => {
                               const state = getSectionState(section);
                               const color = getCourseColor(section.courseCode);
-                              
+
                               let bgClass = color.bg;
                               let textClass = color.text;
                               let opacity = 'opacity-100';
                               let cursor = 'cursor-pointer';
-                              
+
                               if (state === 'chosen') {
                                 bgClass = color.bgHard;
                                 textClass = color.textHard;
@@ -1890,11 +1907,10 @@ return;
                                 opacity = 'opacity-30';
                                 cursor = 'cursor-not-allowed';
                               } else {
-                                // possible
                                 opacity = 'opacity-70';
                               }
 
-                              // Get the overlap group for this section
+                              // Position overlapping sections side by side inside the same cell.
                               const overlapGroup = finalOverlapGroups.get(section.id) || [section.id];
                               const numOverlaps = overlapGroup.length;
                               const overlapIndex = overlapGroup.indexOf(section.id);
@@ -1940,7 +1956,7 @@ return;
                     ])}
                   </div>
                 </div>
-              </div> 
+              </div>
             </CardContent>
           </Card>
         </div>

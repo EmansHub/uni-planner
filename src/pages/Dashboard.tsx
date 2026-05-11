@@ -14,6 +14,8 @@ interface DashboardProps {
 
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const navigate = useNavigate();
+
+  // Use initials as the profile button fallback when no avatar image is available.
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -26,7 +28,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50">
       <div className="container mx-auto p-4 md:p-8">
-        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl mb-2">Welcome back, {user.name ? user.name.split(' ')[0] : 'User'}!</h1>
@@ -45,24 +46,23 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </AvatarFallback>
               </Avatar>
             </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  onLogout();
-                  navigate('/login');
-                }}
-                title="Logout"
-              >
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={async () => {
+                await supabase.auth.signOut();
+                onLogout();
+                navigate('/login');
+              }}
+              title="Logout"
+            >
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
         </div>
 
-        {/* Main Cards */}
         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate('/plan-selection')}
           >
@@ -84,7 +84,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             </CardContent>
           </Card>
 
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate('/semester-schedule')}
           >

@@ -16,28 +16,29 @@ interface UserProfileProps {
   onUpdateUser: (user: User) => void;
 }
 
-  const generateEnrollmentSemesters = () => {
-    const semesters: string[] = [];
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+const generateEnrollmentSemesters = () => {
+  const semesters: string[] = [];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
 
-    let currentAcademicYearStart = year;
+  let currentAcademicYearStart = year;
 
-    if (month < 7) {
-      currentAcademicYearStart = year - 1;
-    }
-    
-    // Build list from past → current only
-    for (let y = currentAcademicYearStart - 4; y <= currentAcademicYearStart; y++) {
-      semesters.push(`Fall ${y}`);
-      semesters.push(`Spring ${y + 1}`);
-    }
+  if (month < 7) {
+    currentAcademicYearStart = year - 1;
+  }
 
-    return semesters;
-  };
+  // Profile editing allows only recent enrollment terms, ending with the current academic year.
+  for (let y = currentAcademicYearStart - 4; y <= currentAcademicYearStart; y++) {
+    semesters.push(`Fall ${y}`);
+    semesters.push(`Spring ${y + 1}`);
+  }
+
+  return semesters;
+};
 
 export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
+  // Form state starts from the current app user and is saved only when editing.
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name);
   const [major, setMajor] = useState(user.major);
@@ -47,25 +48,28 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
   const navigate = useNavigate();
 
   const loadDegreePrograms = async () => {
+    // Load program names so saved major codes can be shown as readable names.
     const { data, error } = await supabase
-        .from('degree_programs')
-        .select('code, name')
-        .order('name', { ascending: true });
+      .from('degree_programs')
+      .select('code, name')
+      .order('name', { ascending: true });
 
-      if (error) {
-        console.error('Error loading degree programs:', error);
-        toast.error('Failed to load majors');
-        return;
-      }
+    if (error) {
+      console.error('Error loading degree programs:', error);
+      toast.error('Failed to load majors');
+      return;
+    }
 
-      setDegreePrograms(data || []);
+    setDegreePrograms(data || []);
   };
 
   React.useEffect(() => {
+    // Program names are loaded once because they rarely change during a session.
     loadDegreePrograms();
   }, []);
 
   const getInitials = (name: string) => {
+    // The avatar uses initials because no profile image is stored.
     return name
       .split(' ')
       .map(n => n[0])
@@ -75,6 +79,7 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
   };
 
   const handleSave = async () => {
+    // Profile fields are required because planning logic depends on major, term, and gender.
     if (!name || !major || !enrollmentSemester || !gender) {
       toast.error('Please fill in all fields');
       return;
@@ -83,11 +88,13 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
     const { data: authData } = await supabase.auth.getUser();
     const authUser = authData.user;
 
+    // Profile rows are keyed by the current Supabase auth user.
     if (!authUser) {
       toast.error('You must be logged in');
       return;
     }
 
+    // Update the profile table, not the auth metadata, because the app reads profile rows.
     const { error } = await supabase
       .from('users')
       .update({
@@ -113,12 +120,14 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
       gender,
     };
 
+    // Keep the app state in sync with the database update.
     onUpdateUser(updatedUser);
     setIsEditing(false);
     toast.success('Profile updated successfully!');
   };
 
   const handleCancel = () => {
+    // Revert local form edits back to the last saved user state.
     setName(user.name);
     setMajor(user.major);
     setEnrollmentSemester(user.enrollmentSemester);
@@ -181,17 +190,18 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
               <div className="space-y-2">
                 <Label htmlFor="major">Major</Label>
                 {isEditing ? (
+                  // Edit mode stores the program code; view mode shows the readable program name.
                   <Select value={major} onValueChange={setMajor}>
                     <SelectTrigger id="major">
                       <SelectValue />
                     </SelectTrigger>
-                      <SelectContent>
-                        {degreePrograms.map((program) => (
-                          <SelectItem key={program.code} value={program.code}>
-                            {program.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                    <SelectContent>
+                      {degreePrograms.map((program) => (
+                        <SelectItem key={program.code} value={program.code}>
+                          {program.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 ) : (
                   <Input
@@ -204,17 +214,18 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
               <div className="space-y-2">
                 <Label htmlFor="enrollment">Enrollment Semester</Label>
                 {isEditing ? (
+                  // Enrollment terms are generated locally from the current academic year.
                   <Select value={enrollmentSemester} onValueChange={setEnrollmentSemester}>
                     <SelectTrigger id="enrollment">
                       <SelectValue />
                     </SelectTrigger>
-                      <SelectContent>
-                        {generateEnrollmentSemesters().map((semester) => (
-                          <SelectItem key={semester} value={semester}>
-                            {semester}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                    <SelectContent>
+                      {generateEnrollmentSemesters().map((semester) => (
+                        <SelectItem key={semester} value={semester}>
+                          {semester}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 ) : (
                   <Input value={enrollmentSemester} disabled />
@@ -224,6 +235,7 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
               <div className="space-y-2">
                 <Label htmlFor="gender">Gender</Label>
                 {isEditing ? (
+                  // Gender drives schedule-section visibility in the semester schedule page.
                   <Select value={gender} onValueChange={setGender}>
                     <SelectTrigger id="gender">
                       <SelectValue placeholder="Select your gender" />

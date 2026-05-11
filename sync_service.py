@@ -3,6 +3,7 @@ from supabase_client import supabase
 
 
 def get_existing_courses_map():
+    # Only sections for known curriculum courses are synced into the app.
     response = supabase.table("courses").select("id, name, credits").execute()
 
     courses_map = {}
@@ -14,6 +15,7 @@ def get_existing_courses_map():
     return courses_map
 
 def run_pmu_sync():
+    # Scrape current PMU offerings and replace the stored section data.
     scraped = scrape_courses()
 
     sections_data = scraped.get("sections_data", [])
@@ -33,7 +35,7 @@ def run_pmu_sync():
 
     existing_courses = get_existing_courses_map()
 
-    # Only allow sections for courses that already exist in courses table
+    # Track scraped courses that are missing from the local curriculum table.
     valid_course_ids = set()
     missing_courses = []
 
@@ -49,7 +51,7 @@ def run_pmu_sync():
                 "name": course_title
             })
 
-    # Deduplicate missing courses by id
+    # Deduplicate missing courses by ID before returning the sync report.
     missing_courses_map = {}
     for item in missing_courses:
         course_id = item.get("id")
@@ -59,7 +61,7 @@ def run_pmu_sync():
 
     course_response = None
 
-    # Keep only sections whose course already exists in courses table
+    # Keep only sections whose course already exists in the courses table.
     enriched_sections = []
     valid_crns = set()
 
@@ -71,6 +73,7 @@ def run_pmu_sync():
             valid_crns.add(crn)
 
             section_type = section.get("section_type")
+            # LAB rows share a course but should not add extra schedule credits.
             section_credits = 0 if section_type == "LAB" else existing_courses[course_id]["credits"]
 
             enriched_sections.append({
@@ -84,7 +87,7 @@ def run_pmu_sync():
                 "gender": section.get("gender")
             })
 
-    # Deduplicate sections by CRN
+    # Deduplicate sections by CRN so repeated scrape rows do not duplicate offerings.
     sections_map = {}
     for item in enriched_sections:
         crn = item.get("crn")
@@ -92,13 +95,13 @@ def run_pmu_sync():
             sections_map[crn] = item
     enriched_sections = list(sections_map.values())
 
-    # Keep only meetings whose section is being inserted
+    # Keep only meetings whose parent section is being inserted.
     filtered_meetings = [
         meeting for meeting in meetings_data
         if meeting.get("crn") in valid_crns
     ]
 
-    # Deduplicate meetings by (crn, day, start_time)
+    # Deduplicate meetings by section, day, and start time.
     meetings_map = {}
     for item in filtered_meetings:
         key = (item.get("crn"), item.get("day"), item.get("start_time"))
@@ -115,7 +118,7 @@ def run_pmu_sync():
             "missing_courses": missing_courses
         }
 
-    # Clear old scraped offerings first
+    # Clear old scraped offerings before inserting the latest PMU data.
     clear_meetings_response = supabase.table("course_section_meetings").delete().neq("crn", "").execute()
     clear_sections_response = supabase.table("course_sections").delete().neq("crn", "").execute()
 

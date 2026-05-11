@@ -22,7 +22,6 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
   const navigate = useNavigate()
 
   const handleResetPassword = async () => {
-    // Validate inputs
     if (!newPassword || !confirmPassword) {
       toast.error('Please fill in all fields');
       return;
@@ -30,6 +29,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
 
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
+    // Reset links create a Supabase session before this password update runs.
     if (!passwordRegex.test(newPassword)) {
       toast.error('Password must be at least 8 characters and include uppercase, lowercase, and a number');
       return;
@@ -44,6 +44,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
 
     try {
 
+      // Confirm the reset session is still active before updating the password.
       const { data: userData } = await supabase.auth.getUser();
 
       if (!userData.user) {
@@ -62,7 +63,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
 
       toast.success('Password updated successfully!');
       navigate('/login');
-      
+
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
       toast.error('An error occurred. Please try again.');
@@ -109,8 +110,8 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
               />
             </div>
 
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleResetPassword}
               disabled={loading}
             >
@@ -130,9 +131,9 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
         </Card>
       </div>
 
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );

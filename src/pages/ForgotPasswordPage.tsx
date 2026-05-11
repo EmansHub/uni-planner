@@ -23,20 +23,23 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
 
 
   const handleResetRequest = async () => {
-    // Validate email
     if (!email) {
       toast.error('Please enter your email address');
       return;
     }
 
+<<<<<<< HEAD
     if (!email.endsWith('@pmu.edu.sa')) {
       toast.error('Please use your PMU email');
       return;
     }
 
+=======
+>>>>>>> 86ce3dabae28d96e29462a7e264f6de81a6bdc8e
     setLoading(true);
 
     try {
+      // Send the user back to the app after they open the Supabase reset link.
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -49,7 +52,7 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
       toast.success('Password reset email sent!');
       onPasswordReset(email);
       navigate('/reset-link-sent');
-      
+
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
       toast.error('An error occurred. Please check your connection.');
@@ -94,8 +97,8 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
               </div>
             </div>
 
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleResetRequest}
               disabled={loading}
             >
@@ -116,9 +119,9 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
         </Card>
       </div>
 
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );

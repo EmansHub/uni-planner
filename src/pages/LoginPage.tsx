@@ -11,33 +11,16 @@ import { HelpChatbot } from '../components/HelpChatbot';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
-// =============================================================================
-// COMPONENT PROPS
-// =============================================================================
-
 interface LoginPageProps {
-  onLogin: (user: User) => void;     // Function to call when login succeeds
+  onLogin: (user: User) => void;
 }
 
-// =============================================================================
-// LOGIN PAGE COMPONENT
-// =============================================================================
-
 export function LoginPage({ onLogin }: LoginPageProps) {
-  // ---------------------------------------------------------------------------
-  // STATE MANAGEMENT
-  // ---------------------------------------------------------------------------
-  
-  const [email, setEmail] = useState('');           // User's email input
-  const [password, setPassword] = useState('');     // User's password input
-  const [chatbotOpen, setChatbotOpen] = useState(false);  // Help chatbot visibility
-  const [loading, setLoading] = useState(false);    // Loading state during login
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  // ---------------------------------------------------------------------------
-  // LOGIN HANDLER
-  // ---------------------------------------------------------------------------
-  
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -48,6 +31,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
 
     try {
+      // Authenticate with Supabase before copying profile metadata into app state.
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -62,6 +46,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
       toast.success('Login successful!');
 
+      // App-level user state mirrors the metadata saved during registration.
       onLogin({
         email: user.email ?? email,
         name: user.user_metadata?.name ?? 'User',
@@ -81,29 +66,18 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
   };
 
-  /**
-   * Handle Enter key press in input fields
-   * Allows user to login by pressing Enter
-   */
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleLogin();
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // RENDER
-  // ---------------------------------------------------------------------------
-
   return (
     <>
-      {/* Main container with gradient background */}
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
-        
-        {/* Login card */}
+
         <Card className="w-full max-w-md shadow-xl">
-          
-          {/* Card header with title and back button */}
+
           <CardHeader>
             <Button
               variant="ghost"
@@ -117,11 +91,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <CardTitle>Login</CardTitle>
             <CardDescription>Enter your credentials to access Uni Planner</CardDescription>
           </CardHeader>
-          
-          {/* Card content with form fields */}
+
           <CardContent className="space-y-4">
-            
-            {/* Email input field */}
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -135,7 +107,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
 
-            {/* Password input field */}
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -149,16 +120,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
 
-            {/* Login button */}
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleLogin}
               disabled={loading}
             >
               {loading ? 'Logging in...' : 'Login'}
             </Button>
 
-            {/* Forgot password link */}
             <div className="text-center">
               <button
                 type="button"
@@ -169,7 +138,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               </button>
             </div>
 
-            {/* Register link */}
             <div className="text-center text-sm">
               Don't have an account?{' '}
               <button
@@ -184,10 +152,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         </Card>
       </div>
 
-      {/* Help chatbot - can be opened from any page */}
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );
