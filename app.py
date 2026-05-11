@@ -1598,6 +1598,10 @@ def verify_override_proof():
         image_bytes = uploaded_file.read()
         mime_type = uploaded_file.mimetype or "image/jpeg"
 
+        selected_course_id = request.form.get("selected_course_id", "").replace(" ", "").upper()
+        selected_course_code = request.form.get("selected_course_code", "")
+        selected_course_name = request.form.get("selected_course_name", "")
+
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
         image_data_url = f"data:{mime_type};base64,{base64_image}"
 
@@ -1606,20 +1610,30 @@ def verify_override_proof():
             instructions="""
 You read screenshots of PMU approval emails.
 
+The student selected this course for prerequisite override:
+- selected_course_id: {selected_course_id}
+- selected_course_code: {selected_course_code}
+- selected_course_name: {selected_course_name}
+
+Check whether the uploaded proof approves prerequisite override for THIS selected course.
+
 Return ONLY JSON:
 
 {
   "approved": true or false,
   "type": "override" or "overload",
-  "course_id": "COSC4363 or null",
-  "course_name": "name or null",
+  "course_id": "the approved course code from the screenshot, or null",
+  "course_name": "the approved course name from the screenshot, or null",
   "section": "section or null",
   "reason": "short explanation"
 }
 
-If it's about course override → type = "override"
-
-If it's about credit overload approval → type = "overload"
+Rules:
+- If the screenshot approves prerequisite override for the selected course, approved must be true.
+- If the screenshot is for a different course, approved must be false.
+- If it is about course override, type must be "override".
+- If it is about credit overload approval, type must be "overload".
+- Do not assume approval if the selected course is not clearly shown.
 """,
             input=[
                 {

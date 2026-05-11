@@ -1622,6 +1622,9 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
 
     const formData = new FormData();
     formData.append("file", blob, "override-proof.png");
+    formData.append("selected_course_id", selectedOverrideCourse.id);
+    formData.append("selected_course_code", selectedOverrideCourse.code);
+    formData.append("selected_course_name", selectedOverrideCourse.name);
 
     const res = await fetch("http://127.0.0.1:5000/verify-override-proof", {
       method: "POST",
