@@ -1113,6 +1113,7 @@ export function SemesterSchedule({ user }: SemesterScheduleProps) {
     normalizeCourseCode(code)
   ),
     preferences: aiPrompt,
+    max_credits: getMaxScheduleCredits(),
   }),
 });
 

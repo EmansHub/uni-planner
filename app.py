@@ -484,7 +484,54 @@ Rules:
         print("AI SCHEDULE RANKING ERROR:", str(e))
         return options
 
-def build_schedule_options(course_ids, sections, max_options=3, allow_partial=True):
+def schedule_total_credits(schedule_sections):
+    credits_by_course = {}
+
+    for section in schedule_sections:
+        course_id = section.get("course_id")
+        credits = section.get("credits") or 0
+
+        if course_id and course_id not in credits_by_course:
+            credits_by_course[course_id] = credits
+
+    return sum(credits_by_course.values())
+
+
+def build_course_section_groups(course_sections):
+    lectures = []
+    labs = []
+    combined = []
+
+    for section in course_sections:
+        section_type = section.get("section_type")
+
+        if section_type == "LEC":
+            lectures.append(section)
+        elif section_type == "LAB":
+            labs.append(section)
+        elif section_type == "LEC_LAB":
+            combined.append(section)
+
+    groups = []
+
+    # LEC_LAB is complete by itself
+    for section in combined:
+        groups.append([section])
+
+    # If the course has labs, require one lecture + one lab
+    if labs:
+        for lecture in lectures:
+            for lab in labs:
+                groups.append([lecture, lab])
+
+    # If the course has no labs, lecture alone is okay
+    if not labs:
+        for lecture in lectures:
+            groups.append([lecture])
+
+    return groups
+
+def build_schedule_options(course_ids, sections, max_options=3, allow_partial=True, max_credits=None):
     grouped = {}
 
     for section in sections:
@@ -508,14 +555,28 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
         course_id = course_ids[index]
         course_sections = grouped.get(course_id, [])
 
+        section_groups = build_course_section_groups(course_sections)
+
         added_any = False
 
-        for section in course_sections:
-            if can_add_section(current_schedule, section):
-                added_any = True
-                current_schedule.append(section)
-                backtrack(index + 1, current_schedule, skipped_courses)
-                current_schedule.pop()
+        for section_group in section_groups:
+            can_add_group = True
+
+            for section in section_group:
+                if not can_add_section(current_schedule, section):
+                    can_add_group = False
+                    break
+
+            if not can_add_group:
+                continue
+
+            new_schedule = current_schedule + section_group
+
+            if max_credits is not None and schedule_total_credits(new_schedule) > max_credits:
+                continue
+
+            added_any = True
+            backtrack(index + 1, new_schedule, skipped_courses)
 
         if allow_partial and not added_any:
             skipped_courses.append(course_id)
@@ -524,13 +585,11 @@ def build_schedule_options(course_ids, sections, max_options=3, allow_partial=Tr
 
     backtrack(0, [], [])
 
-    # Sort: prefer schedules with more included courses
     all_options.sort(
-        key=lambda option: len(option.get("sections", [])),
+        key=lambda option: len(set(section.get("course_id") for section in option.get("sections", []))),
         reverse=True
     )
 
-    # Keep options that are actually different
     unique_options = []
     seen_signatures = set()
 
@@ -698,6 +757,7 @@ def generate_schedule():
 
         course_ids = data.get("course_ids", [])
         preferences = data.get("preferences", "")
+        max_credits = data.get("max_credits")
         ai_preferences = interpret_ai_preferences(preferences)
         semester_slots = data.get("semester_slots", [])
         
@@ -725,7 +785,11 @@ def generate_schedule():
             if section_matches_preferences(section, preferences)
         ]
 
-        strict_options = build_schedule_options(course_ids, filtered_sections)
+        strict_options = build_schedule_options(
+            course_ids,
+            filtered_sections,
+            max_credits=max_credits
+        )
 
         if strict_options:
             ranked_options = ai_rank_schedule_options(strict_options, preferences)
@@ -752,7 +816,11 @@ def generate_schedule():
         )
 
         # 3. Try again without preferences, but still conflict-free
-        fallback_options = build_schedule_options(course_ids, sections)
+        fallback_options = build_schedule_options(
+            course_ids,
+            sections,
+            max_credits=max_credits
+        )
 
         if fallback_options:
             explanations.append(
