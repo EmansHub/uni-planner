@@ -140,7 +140,20 @@ const getCappedDegreeCredits = (
   };
 
   const getTotalCompletedCredits = () => {
-    return getCappedDegreeCredits(completedCourses);
+    const completedSemesterCourses = semesters
+      .filter((semester) => semester.completed)
+      .flatMap((semester) => semester.courses);
+
+    const allCompletedCourses = [
+      ...completedCourses,
+      ...completedSemesterCourses,
+    ];
+
+    const uniqueCompletedCourses = Array.from(
+      new Map(allCompletedCourses.map((course) => [course.id, course])).values()
+    );
+
+    return getCappedDegreeCredits(uniqueCompletedCourses);
   };
   
   const loadPlanFromSupabase = async (targetPlanId: string) => {
@@ -1679,7 +1692,19 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
     if (planId) {
       navigate('/saved-plan-view');
     } else {
-      navigate('/course-selection');
+      const completedSemesterCourses = completedCourses.map((course) => course.id);
+
+      const currentSemesterCourses = semesters
+        .flatMap((semester) => semester.courses)
+        .map((course) => course.id)
+        .filter((id) => !String(id).startsWith('PLACEHOLDER_'));
+
+      navigate('/course-selection', {
+        state: {
+          restoredCompletedCourseIds: completedSemesterCourses,
+          restoredCurrentCourseIds: currentSemesterCourses,
+        },
+      });
     }
   };
 

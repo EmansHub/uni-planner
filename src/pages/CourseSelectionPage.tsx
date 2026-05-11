@@ -9,7 +9,7 @@ import { Collapsible, CollapsibleContent } from '../ui/collapsible';
 import { Separator } from '../ui/separator';
 import { toast } from 'sonner';
 import { TranscriptUpload } from '../components/TranscriptUpload';
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase';
 
 interface CourseSelectionPageProps {
@@ -45,6 +45,7 @@ interface Course {
 
 export function CourseSelectionPage({ user, onContinue }: CourseSelectionPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [courseSections, setCourseSections] = useState<CourseSection[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [currentCourses, setCurrentCourses] = useState<Set<string>>(new Set());
@@ -197,6 +198,20 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   useEffect(() => {
     loadCourseSections();
   }, []);
+
+  useEffect(() => {
+    const state = location.state as any;
+
+    if (!state) return;
+
+    if (state.restoredCompletedCourseIds) {
+      setCompletedCourses(new Set(state.restoredCompletedCourseIds));
+    }
+
+    if (state.restoredCurrentCourseIds) {
+      setCurrentCourses(new Set(state.restoredCurrentCourseIds));
+    }
+  }, [location.state]);
 
   const toggleCompleted = (courseId: string) => {
     const newCompleted = new Set(completedCourses);
