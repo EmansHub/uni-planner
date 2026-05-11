@@ -1356,6 +1356,7 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
       setCoursesToTake([]);
       setShowAIDialog(false);
       setGeneratedPlans([]);
+      setAiPlanWarnings([]);
       setAiPrompt('');
       toast.success('Degree plan applied!');
     }
@@ -1727,6 +1728,39 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
       </div>
     );
   }
+
+  const getAppliedAIPlanWarnings = () => {
+    const warnings: string[] = [];
+
+    semesters.forEach((semester) => {
+      const semesterHours = getSemesterHours(semester);
+
+      const isFallOrSpring =
+        semester.id.startsWith('fall-') ||
+        semester.id.startsWith('spring-');
+
+      const hasInternship = semester.courses.some(
+        (course) =>
+          String(course.id).replace(/\s+/g, '').toUpperCase() === 'GEIT4361' ||
+          String(course.code).replace(/\s+/g, '').toUpperCase() === 'GEIT4361'
+      );
+
+      if (
+        isFallOrSpring &&
+        semesterHours > 0 &&
+        semesterHours < 12 &&
+        !hasInternship
+      ) {
+        warnings.push(
+          `${formatSemesterName(semester.id)} is below full-time credit load (${semesterHours} credits).`
+        );
+      }
+    });
+
+    return warnings;
+  };
+
+  const appliedAIPlanWarnings = getAppliedAIPlanWarnings();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
@@ -2222,12 +2256,11 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
               <CardHeader className="py-6">
                 <div className="flex items-center justify-between">
                   <CardTitle>Plan Overview</CardTitle>
-                  {aiPlanWarnings.length > 0 && (
+                  {appliedAIPlanWarnings.length > 0 && (
                     <div className="mt-2 space-y-1">
-                      {aiPlanWarnings.map((warning, index) => (
-                      
+                      {appliedAIPlanWarnings.map((warning, index) => (
                         <p key={index} className="text-xs text-red-600 leading-tight">
-                        ⚠️ {warning}
+                          ⚠️ {warning}
                         </p>
                       ))}
                     </div>

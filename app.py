@@ -1406,8 +1406,17 @@ Rules:
                 and semester_courses
                 and semester_credits < MIN_FALL_SPRING_CREDITS
             ):
+                slot_id = None
+
+                if semester_slots and semester_index < len(semester_slots):
+                    slot_id = semester_slots[semester_index].get("id")
+
+                if slot_id:
+                    semester_label = slot_id.replace("-", " ").title()
+                else:
+                    semester_label = current_term.capitalize() + " semester"
                 generation_warnings.append(
-                    f"{current_term.capitalize()} semester is below full-time credit load."
+                    f"{semester_label} is below full-time credit load ({semester_credits} credits)."
                 )
 
             skipped_terms = 0
