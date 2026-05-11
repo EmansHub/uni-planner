@@ -29,10 +29,10 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
       return;
     }
 
-    //if (!email.endsWith('@pmu.edu.sa')) {
-    //  toast.error('Please use your PMU email');
-    //  return;
-    //}
+    if (!email.endsWith('@pmu.edu.sa')) {
+      toast.error('Please use your PMU email');
+      return;
+    }
 
     setLoading(true);
 

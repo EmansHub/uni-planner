@@ -78,10 +78,10 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
       return;
     }
 
-    //if (!email.endsWith('@pmu.edu.sa')) {
-    //  toast.error('Please use your PMU email');
-    //  return;
-    //}
+    if (!email.endsWith('@pmu.edu.sa')) {
+      toast.error('Please use your PMU email');
+      return;
+    }
 
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
