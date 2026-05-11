@@ -206,7 +206,7 @@ export function SavedPlanView({ planId }: SavedPlanViewProps) {
     });
   };
 
-    const loadElectiveCreditLimits = async () => {
+  const loadElectiveCreditLimits = async () => {
     const { data: planMeta, error: planMetaError } = await supabase
       .from('degree_plans')
       .select('degree_program_code')

@@ -27,7 +27,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   // ---------------------------------------------------------------------------
   // STATE MANAGEMENT
   // ---------------------------------------------------------------------------
-  
+
   const [email, setEmail] = useState('');           // User's email input
   const [password, setPassword] = useState('');     // User's password input
   const [chatbotOpen, setChatbotOpen] = useState(false);  // Help chatbot visibility
@@ -37,7 +37,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   // ---------------------------------------------------------------------------
   // LOGIN HANDLER
   // ---------------------------------------------------------------------------
-  
+
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -99,10 +99,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <>
       {/* Main container with gradient background */}
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
-        
+
         {/* Login card */}
         <Card className="w-full max-w-md shadow-xl">
-          
+
           {/* Card header with title and back button */}
           <CardHeader>
             <Button
@@ -117,10 +117,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <CardTitle>Login</CardTitle>
             <CardDescription>Enter your credentials to access Uni Planner</CardDescription>
           </CardHeader>
-          
+
           {/* Card content with form fields */}
           <CardContent className="space-y-4">
-            
+
             {/* Email input field */}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -150,8 +150,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             </div>
 
             {/* Login button */}
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleLogin}
               disabled={loading}
             >
@@ -185,9 +185,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       </div>
 
       {/* Help chatbot - can be opened from any page */}
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );

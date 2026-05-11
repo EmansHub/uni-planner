@@ -38,9 +38,9 @@ interface RegisterPageProps {
 // REGISTER PAGE COMPONENT
 
 export function RegisterPage({ onRegister }: RegisterPageProps) {
-  
+
   // STATE MANAGEMENT
-  
+
   const [email, setEmail] = useState('');                         // User's email
   const [name, setName] = useState('');                           // User's full name
   const [major, setMajor] = useState('');                         // User's major
@@ -152,10 +152,10 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
     <>
       {/* Main container with gradient background */}
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-orange-50 p-4">
-        
+
         {/* Registration card */}
         <Card className="w-full max-w-md shadow-xl">
-          
+
           {/* Card header */}
           <CardHeader>
             <Button
@@ -170,10 +170,10 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
             <CardTitle>Register</CardTitle>
             <CardDescription>Create your account to get started</CardDescription>
           </CardHeader>
-          
+
           {/* Card content with form fields */}
           <CardContent className="space-y-4">
-            
+
             {/* Email field */}
             <div className="space-y-2">
               <Label htmlFor="email">PMU Email</Label>
@@ -279,8 +279,8 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
             </div>
 
             {/* Register button */}
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleRegister}
               disabled={loading}
             >
@@ -303,9 +303,9 @@ export function RegisterPage({ onRegister }: RegisterPageProps) {
       </div>
 
       {/* Help chatbot */}
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );

@@ -55,18 +55,18 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const [curriculumTotalCredits, setCurriculumTotalCredits] = useState(0);
 
   const loadCourseSections = async () => {
-  setLoadingCourses(true);
+    setLoadingCourses(true);
 
     const { data: sectionMetaRows, error: sectionMetaError } = await supabase
-    .from('curriculum_sections')
-    .select('degree_program_code, course_category, required_credits, display_order')
-    .eq('degree_program_code', user.major);
+      .from('curriculum_sections')
+      .select('degree_program_code, course_category, required_credits, display_order')
+      .eq('degree_program_code', user.major);
 
     if (sectionMetaError) {
-    console.error('Error loading curriculum sections:', sectionMetaError);
-    toast.error('Failed to load curriculum sections');
-    setLoadingCourses(false);
-    return;
+      console.error('Error loading curriculum sections:', sectionMetaError);
+      toast.error('Failed to load curriculum sections');
+      setLoadingCourses(false);
+      return;
     }
 
     const sectionMetaMap = new Map<string, { requiredCredits: number; displayOrder: number }>();
@@ -153,32 +153,32 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       grouped.set(row.course_category, existing);
     });
 
-      const builtSections: CourseSection[] = Array.from(grouped.entries()).map(
-        ([title, courses]) => {
-          const meta = sectionMetaMap.get(title);
-          const isElective =
-            title.toLowerCase().includes('elective');
+    const builtSections: CourseSection[] = Array.from(grouped.entries()).map(
+      ([title, courses]) => {
+        const meta = sectionMetaMap.get(title);
+        const isElective =
+          title.toLowerCase().includes('elective');
 
-          let maxElectives: number | undefined;
-          let electiveNote: string | undefined;
+        let maxElectives: number | undefined;
+        let electiveNote: string | undefined;
 
-          if (isElective && meta?.requiredCredits) {
-            const sampleCredits = courses.find(c => c.credits > 0)?.credits || 3;
-            maxElectives = Math.ceil(meta.requiredCredits / sampleCredits);
-            electiveNote = `${maxElectives} required (${meta.requiredCredits} credits total)`;
-          }
-
-          return {
-            title,
-            courses,
-            isElective,
-            electiveNote,
-            maxElectives,
-            displayOrder: meta?.displayOrder ?? 99,
-            requiredCredits: meta?.requiredCredits ?? 0,
-          };
+        if (isElective && meta?.requiredCredits) {
+          const sampleCredits = courses.find(c => c.credits > 0)?.credits || 3;
+          maxElectives = Math.ceil(meta.requiredCredits / sampleCredits);
+          electiveNote = `${maxElectives} required (${meta.requiredCredits} credits total)`;
         }
-      );
+
+        return {
+          title,
+          courses,
+          isElective,
+          electiveNote,
+          maxElectives,
+          displayOrder: meta?.displayOrder ?? 99,
+          requiredCredits: meta?.requiredCredits ?? 0,
+        };
+      }
+    );
 
     builtSections.sort((a, b) => {
       const orderA = a.displayOrder ?? 99;
@@ -187,7 +187,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       if (orderA !== orderB) return orderA - orderB;
       return a.title.localeCompare(b.title);
     });
-    
+
     setCourseSections(builtSections);
     setExpandedSections(
       new Set(builtSections.filter(s => !s.isElective).map(s => s.title))
@@ -229,20 +229,20 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
 
   const toggleCurrent = (courseId: string, sectionTitle: string) => {
     const section = courseSections.find(s => s.title === sectionTitle);
-    
+
     // If it's an elective section with limits, check the limit
     if (section?.isElective && section.maxElectives) {
       const sectionCourseIds = section.courses.map(c => c.id);
-      const selectedInSection = Array.from(currentCourses).filter(id => 
+      const selectedInSection = Array.from(currentCourses).filter(id =>
         sectionCourseIds.includes(id)
       ).length;
-      const completedInSection = Array.from(completedCourses).filter(id => 
+      const completedInSection = Array.from(completedCourses).filter(id =>
         sectionCourseIds.includes(id)
       ).length;
-      
+
       // If trying to select a new course and already at limit
-      if (!currentCourses.has(courseId) && 
-          selectedInSection + completedInSection >= section.maxElectives) {
+      if (!currentCourses.has(courseId) &&
+        selectedInSection + completedInSection >= section.maxElectives) {
         toast.error(`You can only select ${section.maxElectives} course(s) from ${sectionTitle}`);
         return;
       }
@@ -264,29 +264,29 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const markSectionCompleted = (section: CourseSection) => {
     const newCompleted = new Set(completedCourses);
     const newCurrent = new Set(currentCourses);
-    
+
     // If it's an elective section with limits, only mark up to the limit
     if (section.isElective && section.maxElectives) {
       const sectionCourseIds = section.courses.map(c => c.id);
-      const alreadyCompleted = Array.from(completedCourses).filter(id => 
+      const alreadyCompleted = Array.from(completedCourses).filter(id =>
         sectionCourseIds.includes(id)
       ).length;
-      
+
       if (alreadyCompleted >= section.maxElectives) {
         toast.info(`Already completed the required ${section.maxElectives} course(s) from ${section.title}`);
         return;
       }
-      
+
       const needed = section.maxElectives - alreadyCompleted;
       const coursesToMark = section.courses.slice(0, needed);
-      
+
       coursesToMark.forEach(course => {
         if (!newCompleted.has(course.id)) {
           newCompleted.add(course.id);
           newCurrent.delete(course.id);
         }
       });
-      
+
       toast.success(`Marked ${needed} course(s) as completed from ${section.title}`);
     } else {
       // For non-elective sections, mark all
@@ -296,7 +296,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
       });
       toast.success(`Marked all courses as completed in ${section.title}`);
     }
-    
+
     setCompletedCourses(newCompleted);
     setCurrentCourses(newCurrent);
   };
@@ -327,82 +327,82 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
     }
     setExpandedSections(newExpanded);
   };
-  
+
 
   const handleAuditUpload = async (file: File) => {
-  const formData = new FormData();
-  formData.append("file", file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-  try {
-    const response = await fetch("http://127.0.0.1:5000/read-degree-audit", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const response = await fetch("http://127.0.0.1:5000/read-degree-audit", {
+        method: "POST",
+        body: formData,
+      });
 
-    const data: {
-      completed_courses: string[];
-      in_progress_courses: string[];
-    } = await response.json();
+      const data: {
+        completed_courses: string[];
+        in_progress_courses: string[];
+      } = await response.json();
 
-    const allCourses = courseSections.flatMap(section => section.courses);
+      const allCourses = courseSections.flatMap(section => section.courses);
 
+      const newCompleted = new Set(completedCourses);
+      const newCurrent = new Set(currentCourses);
+
+      data.completed_courses.forEach((courseId) => {
+        const match = allCourses.find(course => course.id === courseId);
+
+        if (match) {
+          newCompleted.add(match.id);
+          newCurrent.delete(match.id);
+        }
+      });
+
+      data.in_progress_courses.forEach((courseId) => {
+        const match = allCourses.find(course => course.id === courseId);
+
+        if (match && !newCompleted.has(match.id)) {
+          newCurrent.add(match.id);
+        }
+      });
+
+      setCompletedCourses(newCompleted);
+      setCurrentCourses(newCurrent);
+
+      toast.success(
+        `Audit read: ${newCompleted.size} completed, ${newCurrent.size} in progress`
+      );
+    } catch (error) {
+      console.error("Audit upload error:", error);
+      toast.error("Failed to read degree audit");
+    }
+  };
+
+  const handleCoursesExtracted = (extractedCourses: any[]) => {
     const newCompleted = new Set(completedCourses);
-    const newCurrent = new Set(currentCourses);
+    const allCourses = courseSections.flatMap(s => s.courses);
 
-    data.completed_courses.forEach((courseId) => {
-      const match = allCourses.find(course => course.id === courseId);
+    let matchedCount = 0;
 
-      if (match) {
-        newCompleted.add(match.id);
-        newCurrent.delete(match.id);
-      }
-    });
+    extractedCourses.forEach(extractedCourse => {
+      const matchingCourse = allCourses.find(
+        c => c.code === extractedCourse.code || c.id === extractedCourse.id
+      );
 
-    data.in_progress_courses.forEach((courseId) => {
-      const match = allCourses.find(course => course.id === courseId);
-
-      if (match && !newCompleted.has(match.id)) {
-        newCurrent.add(match.id);
+      if (matchingCourse) {
+        newCompleted.add(matchingCourse.id);
+        matchedCount++;
       }
     });
 
     setCompletedCourses(newCompleted);
-    setCurrentCourses(newCurrent);
 
-    toast.success(
-      `Audit read: ${newCompleted.size} completed, ${newCurrent.size} in progress`
-    );
-  } catch (error) {
-    console.error("Audit upload error:", error);
-    toast.error("Failed to read degree audit");
-  }
-};
-
-  const handleCoursesExtracted = (extractedCourses: any[]) => {
-  const newCompleted = new Set(completedCourses);
-  const allCourses = courseSections.flatMap(s => s.courses);
-
-  let matchedCount = 0;
-
-  extractedCourses.forEach(extractedCourse => {
-    const matchingCourse = allCourses.find(
-      c => c.code === extractedCourse.code || c.id === extractedCourse.id
-    );
-
-    if (matchingCourse) {
-      newCompleted.add(matchingCourse.id);
-      matchedCount++;
+    if (matchedCount > 0) {
+      toast.success(`Successfully matched ${matchedCount} course(s) from your degree audit`);
+    } else {
+      toast.info('No matching courses found. You may need to add them manually.');
     }
-  });
-
-  setCompletedCourses(newCompleted);
-
-  if (matchedCount > 0) {
-    toast.success(`Successfully matched ${matchedCount} course(s) from your degree audit`);
-  } else {
-    toast.info('No matching courses found. You may need to add them manually.');
-  }
-};
+  };
 
   const getCappedCredits = (courses: Course[], section?: CourseSection) => {
     const total = courses.reduce((sum, course) => sum + course.credits, 0);
@@ -417,35 +417,35 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
   const handleNext = () => {
     // Build the list of courses to show in drag-drop
     const coursesToShow: Course[] = [];
-    
+
     courseSections.forEach(section => {
       if (section.isElective && section.maxElectives) {
         // For electives with limits, only include selected ones and create placeholders for unfulfilled
         const sectionCourseIds = section.courses.map(c => c.id);
         const completedInSection = section.courses.filter(c => completedCourses.has(c.id));
         const currentInSection = section.courses.filter(c => currentCourses.has(c.id));
-        
+
         // Add the specific courses that are in progress
         currentInSection.forEach(course => {
           if (!completedCourses.has(course.id)) {
             coursesToShow.push(course);
           }
         });
-        
+
         // Calculate how many more are needed
         const totalSelected = completedInSection.length + currentInSection.length;
         const stillNeeded = section.maxElectives - totalSelected;
-        
+
         // Create placeholder courses for unfulfilled requirements
         for (let i = 0; i < stillNeeded; i++) {
           const placeholderId = `PLACEHOLDER_${section.title.replace(/\s/g, '_')}_${i}`;
           const credits = section.courses[0]?.credits || 3; // Use credit from first course in section
-          
+
           coursesToShow.push({
             id: placeholderId,
             code: section.title,
-            name: section.maxElectives === 1 
-              ? `Select from ${section.title}` 
+            name: section.maxElectives === 1
+              ? `Select from ${section.title}`
               : `Select from ${section.title} (${i + 1} of ${stillNeeded})`,
             credits: credits,
             department: 'ELECTIVE',
@@ -456,20 +456,20 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
         }
       } else {
         // For required courses, show all that aren't completed
-        const requiredNotCompleted = section.courses.filter(c => 
+        const requiredNotCompleted = section.courses.filter(c =>
           !completedCourses.has(c.id)
         );
         coursesToShow.push(...requiredNotCompleted);
       }
     });
-    
+
     // Collect all completed courses with their full data
     const completedCoursesData = courseSections
       .flatMap(s => s.courses)
       .filter(c => completedCourses.has(c.id));
-    
+
     const completedIds = Array.from(completedCourses);
-    
+
     // Collect all available elective options (not placeholders, just the actual elective courses)
     const allElectiveOptions: Course[] = [];
     courseSections.forEach(section => {
@@ -543,9 +543,9 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                 <p className="text-slate-600">
                   Mark the courses you've already completed and the ones you're currently taking
                 </p>
-                  <p className="text-sm text-slate-500 mt-2">
-                    Total credits in curriculum: {curriculumTotalCredits}
-                  </p>
+                <p className="text-sm text-slate-500 mt-2">
+                  Total credits in curriculum: {curriculumTotalCredits}
+                </p>
               </div>
               <Button
                 variant="outline"
@@ -571,7 +571,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                   return (
                     <div key={section.title}>
                       {sectionIndex > 0 && <Separator className="my-4" />}
-                      
+
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex-1">
@@ -600,7 +600,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                               )}
                             </p>
                           </div>
-                          
+
                           <div className="flex items-center gap-2">
                             {!section.isElective && (
                               <div className="flex items-center gap-1">
@@ -624,7 +624,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                                 </Button>
                               </div>
                             )}
-                            
+
                             {section.isElective ? (
                               <Button
                                 size="sm"
@@ -653,7 +653,7 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                               {section.courses.map((course) => {
                                 const isCompleted = completedCourses.has(course.id);
                                 const isCurrent = currentCourses.has(course.id);
-                                
+
                                 return (
                                   <Card key={course.id} className="p-3">
                                     <div className="flex items-start gap-4">
@@ -718,12 +718,12 @@ export function CourseSelectionPage({ user, onContinue }: CourseSelectionPagePro
                                               </p>
                                             )}
                                           </div>
-                                          <Badge 
-                                            variant={course.isPrepCourse ? "outline" : "secondary"} 
+                                          <Badge
+                                            variant={course.isPrepCourse ? "outline" : "secondary"}
                                             className="text-xs"
                                           >
-                                            {course.isPrepCourse 
-                                              ? `${course.semesterHours}h (0cr)` 
+                                            {course.isPrepCourse
+                                              ? `${course.semesterHours}h (0cr)`
                                               : `${course.credits} cr`}
                                           </Badge>
                                         </div>

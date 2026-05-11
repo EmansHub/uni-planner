@@ -17,12 +17,12 @@ export function WelcomePage() {
           <Card className="w-full max-w-md shadow-xl">
             <CardHeader className="text-center space-y-4">
               <div className="flex justify-center">
-                
+
                 <div className="bg-[#E87722] p-4 rounded-full">
                   <GraduationCap className="w-12 h-12 text-white" />
-                </div> 
+                </div>
 
-                
+
               </div>
               <CardTitle className="text-3xl ">Uni Planner</CardTitle>
               <CardDescription className="text-slate-500">
@@ -38,18 +38,18 @@ export function WelcomePage() {
                 Login
               </Button>
 
-              <Button 
-                className="w-full" 
-                variant="outline" 
+              <Button
+                className="w-full"
+                variant="outline"
                 size="lg"
                 onClick={() => navigate('/register')}
               >
                 Register
               </Button>
-              
-              <Button 
-                className="w-full" 
-                variant="ghost" 
+
+              <Button
+                className="w-full"
+                variant="ghost"
                 size="lg"
                 onClick={() => navigate('/forgot-password')}
               >
@@ -62,7 +62,7 @@ export function WelcomePage() {
           <p className="text-slate-600">Every success story begins with a good plan</p>
         </div>
       </div>
-       <HelpChatbot isOpen={chatbotOpen} onToggle={() => setChatbotOpen(!chatbotOpen)} /> 
+      <HelpChatbot isOpen={chatbotOpen} onToggle={() => setChatbotOpen(!chatbotOpen)} />
     </>
   );
 }

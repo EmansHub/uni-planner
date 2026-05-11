@@ -62,7 +62,7 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
 
       toast.success('Password updated successfully!');
       navigate('/login');
-      
+
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
       toast.error('An error occurred. Please try again.');
@@ -109,8 +109,8 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
               />
             </div>
 
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleResetPassword}
               disabled={loading}
             >
@@ -130,9 +130,9 @@ export function ResetPasswordConfirm({ email }: ResetPasswordConfirmProps) {
         </Card>
       </div>
 
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );

@@ -99,16 +99,16 @@ export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanning
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
   const getCourseElectiveCategory = (course: Course) => {
-  if (course.electiveCategory) return course.electiveCategory;
+    if (course.electiveCategory) return course.electiveCategory;
 
-  const matchingElective = availableElectives.find(
-    elective => elective.id === course.id
-  );
+    const matchingElective = availableElectives.find(
+      elective => elective.id === course.id
+    );
 
-  return matchingElective?.electiveCategory;
-};
+    return matchingElective?.electiveCategory;
+  };
 
-const getCappedDegreeCredits = (
+  const getCappedDegreeCredits = (
     courses: Course[],
     options?: { excludeRepeats?: boolean }
   ) => {
@@ -159,7 +159,7 @@ const getCappedDegreeCredits = (
 
     return getCappedDegreeCredits(uniqueCompletedCourses);
   };
-  
+
   const loadPlanFromSupabase = async (targetPlanId: string) => {
     const { data: planRow, error: planError } = await supabase
       .from('degree_plans')
@@ -206,7 +206,7 @@ const getCappedDegreeCredits = (
       `)
       .eq('id', Number(targetPlanId))
       .single();
-      
+
     if (planError || !planRow) {
       console.error('Error loading saved plan:', planError);
       toast.error('Failed to load saved plan');
@@ -375,11 +375,11 @@ const getCappedDegreeCredits = (
       }
     });
 
-  const remainingNonElectives = Array.from(dedupedMap.values());
+    const remainingNonElectives = Array.from(dedupedMap.values());
 
-  setCoursesToTake(remainingNonElectives);
-  setAvailableElectives(electiveCourses);
-  setLoadingPlan(false);
+    setCoursesToTake(remainingNonElectives);
+    setAvailableElectives(electiveCourses);
+    setLoadingPlan(false);
   };
 
   const loadTotalRequiredCredits = async () => {
@@ -430,7 +430,7 @@ const getCappedDegreeCredits = (
       await loadOfferingRules();
       await loadTotalRequiredCredits();
       await loadElectiveCreditLimits();
-      
+
       // If editing existing plan → load from DB
       if (planId) {
         await loadPlanFromSupabase(planId);
@@ -517,12 +517,12 @@ const getCappedDegreeCredits = (
   };
 
   const getMaxCredits = (semester: Semester, isNextSemester: boolean = false) => {
-  if (semester.isSummer) {
-    return 9;
-  }
+    if (semester.isSummer) {
+      return 9;
+    }
 
-  return (isNextSemester && restrictions.hasOverload) ? 22 : 20;
-};
+    return (isNextSemester && restrictions.hasOverload) ? 22 : 20;
+  };
 
   const getHoursBeforeSemester = (targetSemesterId: string) => {
     // Calculate total hours (completed + planned) before a specific semester
@@ -610,7 +610,7 @@ const getCappedDegreeCredits = (
     setCourseOfferingRules(map);
   };
 
-const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
+  const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
     const now = new Date();
     const month = now.getMonth() + 1;
     const day = now.getDate();
@@ -966,29 +966,29 @@ const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
   const handleDrop = (targetSemester: string) => {
     if (!draggedCourse || !draggedFromSemester) return;
 
-  const normalizedDraggedCourseId = String(draggedCourse.id)
-    .replace(/\s+/g, '')
-    .toUpperCase();
+    const normalizedDraggedCourseId = String(draggedCourse.id)
+      .replace(/\s+/g, '')
+      .toUpperCase();
 
-  if (targetSemester !== 'available' && normalizedDraggedCourseId === 'ASSE4311') {
-    const sortedSemesters = [...semesters].sort(
-      (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
-    );
+    if (targetSemester !== 'available' && normalizedDraggedCourseId === 'ASSE4311') {
+      const sortedSemesters = [...semesters].sort(
+        (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
+      );
 
-    const semestersAfterTarget = sortedSemesters.filter(
-      semester =>
-        getSemesterOrder(semester.id) > getSemesterOrder(targetSemester) &&
-        semester.courses.length > 0
-    );
+      const semestersAfterTarget = sortedSemesters.filter(
+        semester =>
+          getSemesterOrder(semester.id) > getSemesterOrder(targetSemester) &&
+          semester.courses.length > 0
+      );
 
-    if (semestersAfterTarget.length === 0) {
-      toast.error('ASSE 4311 cannot be planned in the very last semester.');
-      setDraggedCourse(null);
-      setDraggedFromSemester(null);
-      setDragOverSemester(null);
-      return;
+      if (semestersAfterTarget.length === 0) {
+        toast.error('ASSE 4311 cannot be planned in the very last semester.');
+        setDraggedCourse(null);
+        setDraggedFromSemester(null);
+        setDragOverSemester(null);
+        return;
+      }
     }
-  }
 
     // Check if target semester is completed
     if (targetSemester !== 'available') {
@@ -1140,30 +1140,30 @@ const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
       }
     }
 
-      // Check if target semester would exceed max CREDITS
-      if (targetSemester !== 'available') {
-        const targetSem = semesters.find(s => s.id === targetSemester);
+    // Check if target semester would exceed max CREDITS
+    if (targetSemester !== 'available') {
+      const targetSem = semesters.find(s => s.id === targetSemester);
 
-        if (targetSem) {
-          const currentCredits = getTotalCredits(targetSem);
-          const courseCredits = draggedCourse.isPrepCourse ? 0 : draggedCourse.credits;
+      if (targetSem) {
+        const currentCredits = getTotalCredits(targetSem);
+        const courseCredits = draggedCourse.isPrepCourse ? 0 : draggedCourse.credits;
 
-          const sortedSemesters = [...semesters].sort(
-            (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
-          );
+        const sortedSemesters = [...semesters].sort(
+          (a, b) => getSemesterOrder(a.id) - getSemesterOrder(b.id)
+        );
 
-          const isNextSemester = sortedSemesters[0]?.id === targetSem.id;
-          const maxCredits = getMaxCredits(targetSem, isNextSemester);
+        const isNextSemester = sortedSemesters[0]?.id === targetSem.id;
+        const maxCredits = getMaxCredits(targetSem, isNextSemester);
 
-          if (currentCredits + courseCredits > maxCredits) {
-            toast.error(`Cannot add course. This would exceed the ${maxCredits} credit limit for ${formatSemesterName(targetSem.id)}.`);
-            setDraggedCourse(null);
-            setDraggedFromSemester(null);
-            setDragOverSemester(null);
-            return;
-          }
+        if (currentCredits + courseCredits > maxCredits) {
+          toast.error(`Cannot add course. This would exceed the ${maxCredits} credit limit for ${formatSemesterName(targetSem.id)}.`);
+          setDraggedCourse(null);
+          setDraggedFromSemester(null);
+          setDragOverSemester(null);
+          return;
         }
       }
+    }
 
     // Remove from source
     if (draggedFromSemester === 'available') {
@@ -1195,156 +1195,156 @@ const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
     setDragOverSemester(null);
   };
 
-const handleGeneratePlan = async () => {
-  try {
-    setIsGeneratingPlan(true);
-    toast.info('AI is generating degree plan...');
+  const handleGeneratePlan = async () => {
+    try {
+      setIsGeneratingPlan(true);
+      toast.info('AI is generating degree plan...');
 
-const promptLower = aiPrompt.toLowerCase();
+      const promptLower = aiPrompt.toLowerCase();
 
-const explicitlyNoSummer =
-  promptLower.includes("no summer") ||
-  promptLower.includes("without summer") ||
-  promptLower.includes("do not include summer") ||
-  promptLower.includes("don't include summer") ||
-  promptLower.includes("dont include summer");
+      const explicitlyNoSummer =
+        promptLower.includes("no summer") ||
+        promptLower.includes("without summer") ||
+        promptLower.includes("do not include summer") ||
+        promptLower.includes("don't include summer") ||
+        promptLower.includes("dont include summer");
 
-const wantsSummerForAI =
-  !explicitlyNoSummer &&
-  (
-    promptLower.includes("summer") ||
-    promptLower.includes("fast") ||
-    promptLower.includes("graduate faster")
-  );
+      const wantsSummerForAI =
+        !explicitlyNoSummer &&
+        (
+          promptLower.includes("summer") ||
+          promptLower.includes("fast") ||
+          promptLower.includes("graduate faster")
+        );
 
-const buildPlanningSlotsForAI = (includeSummer: boolean): Semester[] => {
-  const baseSemesters = generateDefaultSemesters(MAX_MAIN_SEMESTER_COUNT);
+      const buildPlanningSlotsForAI = (includeSummer: boolean): Semester[] => {
+        const baseSemesters = generateDefaultSemesters(MAX_MAIN_SEMESTER_COUNT);
 
-  const hasCurrentCourses = semesters[0]?.courses.length > 0;
-  const slots = hasCurrentCourses ? baseSemesters.slice(1) : baseSemesters;
+        const hasCurrentCourses = semesters[0]?.courses.length > 0;
+        const slots = hasCurrentCourses ? baseSemesters.slice(1) : baseSemesters;
 
-  if (!includeSummer) {
-    return slots.filter(
-      (semester) =>
-        !semester.isSummer &&
-        !semester.id.startsWith("summer-")
-    );
-  }
+        if (!includeSummer) {
+          return slots.filter(
+            (semester) =>
+              !semester.isSummer &&
+              !semester.id.startsWith("summer-")
+          );
+        }
 
-  const withSummer: Semester[] = [];
+        const withSummer: Semester[] = [];
 
-  slots.forEach((semester) => {
-    if (semester.isSummer || semester.id.startsWith("summer-")) {
-      return;
-    }
+        slots.forEach((semester) => {
+          if (semester.isSummer || semester.id.startsWith("summer-")) {
+            return;
+          }
 
-    withSummer.push(semester);
+          withSummer.push(semester);
 
-    if (semester.id.startsWith("spring-")) {
-      const year = semester.id.split("-")[1];
+          if (semester.id.startsWith("spring-")) {
+            const year = semester.id.split("-")[1];
 
-      withSummer.push({
-        id: `summer-${year}`,
-        name: `Summer ${year}`,
-        completed: false,
-        isSummer: true,
-        courses: [],
-      });
-    }
-  });
+            withSummer.push({
+              id: `summer-${year}`,
+              name: `Summer ${year}`,
+              completed: false,
+              isSummer: true,
+              courses: [],
+            });
+          }
+        });
 
-  return withSummer;
-};
-
-const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
-      
-   const response = await fetch("http://127.0.0.1:5000/generate-degree-plan", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        degree_program_code: user.major,
-        completed_courses: completedCourses.map((course) => course.id),
-        current_courses: semesters[0]?.courses.map((course) => course.id) || [],
-        preferences: aiPrompt,
-        include_summer: wantsSummerForAI,
-        semester_slots: aiSemesterSlots.map((semester) => ({
-        id: semester.id,
-        term: semester.isSummer
-          ? "summer"
-          : semester.id.startsWith("fall-")
-            ? "fall"
-            : "spring",
-        })),
-      }),
-    });
-
-    const data = await response.json();
-
-    console.log("Backend degree plan result:", data);
-
-    setAiPlanWarnings(data.warnings || []);
-
-    if (!data.plan || data.plan.length === 0) {
-      toast.error(data.message || "No degree plan generated.");
-      return;
-    }
-
-    const allKnownCourses = [
-      ...coursesToTake,
-      ...completedCourses,
-      ...semesters.flatMap((semester) => semester.courses),
-      ...availableElectives,
-    ];
-
-    const courseMap = new Map<string, Course>();
-
-    allKnownCourses.forEach((course) => {
-      courseMap.set(course.id.replace(/\s+/g, '').toUpperCase(), course);
-    });
-
-    const defaultSemesters = aiSemesterSlots.slice(0, data.plan.length);
-
-    const backendPlan = data.plan.map((semesterCourseIds: string[], index: number) => {
-      const baseSemester =
-        defaultSemesters[index] || {
-          id: `generated-${index + 1}`,
-          name: `Semester ${index + 1}`,
-          completed: false,
-          isSummer: false,
-          courses: [],
-        };
-
-      const courses = semesterCourseIds
-        .map((courseId) =>
-          courseMap.get(courseId.replace(/\s+/g, '').toUpperCase())
-        )
-        .filter(Boolean) as Course[];
-
-      return {
-        ...baseSemester,
-        courses,
+        return withSummer;
       };
-    });
 
-    const finalPlan = backendPlan;
+      const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
 
-    const cleanedPlan = finalPlan.filter(
-      (sem: Semester) => sem.courses.length > 0
-    );
+      const response = await fetch("http://127.0.0.1:5000/generate-degree-plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          degree_program_code: user.major,
+          completed_courses: completedCourses.map((course) => course.id),
+          current_courses: semesters[0]?.courses.map((course) => course.id) || [],
+          preferences: aiPrompt,
+          include_summer: wantsSummerForAI,
+          semester_slots: aiSemesterSlots.map((semester) => ({
+            id: semester.id,
+            term: semester.isSummer
+              ? "summer"
+              : semester.id.startsWith("fall-")
+                ? "fall"
+                : "spring",
+          })),
+        }),
+      });
 
-    setGeneratedPlans([cleanedPlan]);
-    setCurrentPlanIndex(0);
-    toast.success("AI degree plan generated!");
+      const data = await response.json();
 
-  } catch (error) {
-    console.error("AI degree plan error:", error);
-    toast.error("Failed to generate degree plan.");
-  } finally {
-    setIsGeneratingPlan(false);
-  }
-};
+      console.log("Backend degree plan result:", data);
+
+      setAiPlanWarnings(data.warnings || []);
+
+      if (!data.plan || data.plan.length === 0) {
+        toast.error(data.message || "No degree plan generated.");
+        return;
+      }
+
+      const allKnownCourses = [
+        ...coursesToTake,
+        ...completedCourses,
+        ...semesters.flatMap((semester) => semester.courses),
+        ...availableElectives,
+      ];
+
+      const courseMap = new Map<string, Course>();
+
+      allKnownCourses.forEach((course) => {
+        courseMap.set(course.id.replace(/\s+/g, '').toUpperCase(), course);
+      });
+
+      const defaultSemesters = aiSemesterSlots.slice(0, data.plan.length);
+
+      const backendPlan = data.plan.map((semesterCourseIds: string[], index: number) => {
+        const baseSemester =
+          defaultSemesters[index] || {
+            id: `generated-${index + 1}`,
+            name: `Semester ${index + 1}`,
+            completed: false,
+            isSummer: false,
+            courses: [],
+          };
+
+        const courses = semesterCourseIds
+          .map((courseId) =>
+            courseMap.get(courseId.replace(/\s+/g, '').toUpperCase())
+          )
+          .filter(Boolean) as Course[];
+
+        return {
+          ...baseSemester,
+          courses,
+        };
+      });
+
+      const finalPlan = backendPlan;
+
+      const cleanedPlan = finalPlan.filter(
+        (sem: Semester) => sem.courses.length > 0
+      );
+
+      setGeneratedPlans([cleanedPlan]);
+      setCurrentPlanIndex(0);
+      toast.success("AI degree plan generated!");
+
+    } catch (error) {
+      console.error("AI degree plan error:", error);
+      toast.error("Failed to generate degree plan.");
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
 
   const handleApplyPlan = () => {
     if (generatedPlans.length > 0) {
@@ -1616,77 +1616,77 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
   };
 
   const handleVerifyProof = async () => {
-  if (!uploadedProofImage || !selectedOverrideCourse) return;
+    if (!uploadedProofImage || !selectedOverrideCourse) return;
 
-  setIsVerifyingProof(true);
+    setIsVerifyingProof(true);
 
-  try {
-    const response = await fetch(uploadedProofImage);
-    const blob = await response.blob();
+    try {
+      const response = await fetch(uploadedProofImage);
+      const blob = await response.blob();
 
-    const formData = new FormData();
-    formData.append("file", blob, "override-proof.png");
-    formData.append("selected_course_id", selectedOverrideCourse.id);
-    formData.append("selected_course_code", selectedOverrideCourse.code);
-    formData.append("selected_course_name", selectedOverrideCourse.name);
+      const formData = new FormData();
+      formData.append("file", blob, "override-proof.png");
+      formData.append("selected_course_id", selectedOverrideCourse.id);
+      formData.append("selected_course_code", selectedOverrideCourse.code);
+      formData.append("selected_course_name", selectedOverrideCourse.name);
 
-    const res = await fetch("http://127.0.0.1:5000/verify-override-proof", {
-      method: "POST",
-      body: formData,
-    });
+      const res = await fetch("http://127.0.0.1:5000/verify-override-proof", {
+        method: "POST",
+        body: formData,
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    console.log("OVERRIDE VERIFY RESULT:", data);
+      console.log("OVERRIDE VERIFY RESULT:", data);
 
-    const selectedCourseId = selectedOverrideCourse.id.replace(/\s+/g, "").toUpperCase();
-    const detectedCourseId = String(data.course_id || "").replace(/\s+/g, "").toUpperCase();
+      const selectedCourseId = selectedOverrideCourse.id.replace(/\s+/g, "").toUpperCase();
+      const detectedCourseId = String(data.course_id || "").replace(/\s+/g, "").toUpperCase();
 
-    if (!data.approved || detectedCourseId !== selectedCourseId) {
-      toast.error("Override proof was not approved for this course.");
-      setIsVerifyingProof(false);
-      return;
-    }
+      if (!data.approved || detectedCourseId !== selectedCourseId) {
+        toast.error("Override proof was not approved for this course.");
+        setIsVerifyingProof(false);
+        return;
+      }
 
-    setRestrictions(prev => ({
-      ...prev,
-      overrideCourses: [
-        ...prev.overrideCourses,
-        {
-          courseId: selectedOverrideCourse.id,
-          proofImage: uploadedProofImage,
-          verified: true
-        }
-      ]
-    }));
-
-    // NEW: handle overload approval
-    if (data.type === "overload" && data.approved) {
       setRestrictions(prev => ({
         ...prev,
-        hasOverload: true
+        overrideCourses: [
+          ...prev.overrideCourses,
+          {
+            courseId: selectedOverrideCourse.id,
+            proofImage: uploadedProofImage,
+            verified: true
+          }
+        ]
       }));
 
-      toast.success("Overload approved! You can now take up to 22 credits.");
+      // NEW: handle overload approval
+      if (data.type === "overload" && data.approved) {
+        setRestrictions(prev => ({
+          ...prev,
+          hasOverload: true
+        }));
 
+        toast.success("Overload approved! You can now take up to 22 credits.");
+
+        setShowOverrideUploadDialog(false);
+        setUploadedProofImage(null);
+        setIsVerifyingProof(false);
+        return;
+      }
+
+      toast.success(`Override approved for ${selectedOverrideCourse.code}!`);
       setShowOverrideUploadDialog(false);
+      setSelectedOverrideCourse(null);
       setUploadedProofImage(null);
       setIsVerifyingProof(false);
-      return;
+
+    } catch (error) {
+      console.error("Override verification error:", error);
+      toast.error("Failed to verify override proof");
+      setIsVerifyingProof(false);
     }
-
-    toast.success(`Override approved for ${selectedOverrideCourse.code}!`);
-    setShowOverrideUploadDialog(false);
-    setSelectedOverrideCourse(null);
-    setUploadedProofImage(null);
-    setIsVerifyingProof(false);
-
-  } catch (error) {
-    console.error("Override verification error:", error);
-    toast.error("Failed to verify override proof");
-    setIsVerifyingProof(false);
-  }
-};
+  };
 
   const removeOverrideCourse = (courseId: string) => {
     setRestrictions(prev => ({
@@ -1843,7 +1843,7 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                       <Checkbox
                         id="overload-checkbox"
                         onCheckedChange={(checked) =>
-                        setRestrictions(prev => ({ ...prev, hasOverload: checked as boolean }))
+                          setRestrictions(prev => ({ ...prev, hasOverload: checked as boolean }))
                         }
                       />
                       <Label htmlFor="overload-checkbox" className="cursor-pointer">
@@ -2154,10 +2154,10 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                       <Button className="w-full" onClick={handleGeneratePlan}>
                         {isGeneratingPlan ? (
                           <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                               Generating plan...
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                            Generating plan...
                           </>
-                        ):(
+                        ) : (
                           <>
                             <Sparkles className="w-4 h-4 mr-2" />
                             Generate Plan
@@ -2168,8 +2168,8 @@ const aiSemesterSlots = buildPlanningSlotsForAI(wantsSummerForAI);
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                      <h3 className="font-medium">Generated Degree Plan</h3>
-                    </div>
+                        <h3 className="font-medium">Generated Degree Plan</h3>
+                      </div>
 
                       <div className="border rounded-lg p-4 bg-slate-50 space-y-3 max-h-96 overflow-y-auto">
                         <p className="text-xs text-slate-500">

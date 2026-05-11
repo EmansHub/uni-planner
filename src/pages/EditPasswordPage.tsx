@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 interface EditPasswordPageProps {
 }
 
-export function EditPasswordPage({}: EditPasswordPageProps) {
+export function EditPasswordPage({ }: EditPasswordPageProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');

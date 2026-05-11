@@ -45,16 +45,16 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </AvatarFallback>
               </Avatar>
             </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  onLogout();
-                  navigate('/login');
-                }}
-                title="Logout"
-              >
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={async () => {
+                await supabase.auth.signOut();
+                onLogout();
+                navigate('/login');
+              }}
+              title="Logout"
+            >
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
@@ -62,7 +62,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
         {/* Main Cards */}
         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate('/plan-selection')}
           >
@@ -84,7 +84,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             </CardContent>
           </Card>
 
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate('/semester-schedule')}
           >

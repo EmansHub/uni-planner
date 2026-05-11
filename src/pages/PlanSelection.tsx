@@ -19,7 +19,7 @@ export function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
   const [planToDelete, setPlanToDelete] = useState<string | null>(null);
   const navigate = useNavigate();
 
-useEffect(() => {
+  useEffect(() => {
     loadPlans();
   }, []);
 
@@ -202,7 +202,7 @@ useEffect(() => {
 
         <div className="grid gap-6">
           {/* Start New Plan */}
-          <Card 
+          <Card
             className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-dashed border-orange-300 bg-white/50"
             onClick={handleStartNewPlan}
           >
@@ -244,9 +244,8 @@ useEffect(() => {
                 return (
                   <Card
                     key={plan.id}
-                    className={`cursor-pointer hover:shadow-lg transition-shadow ${
-                      isDefault ? 'border-2 border-[#E87722]' : ''
-                    }`}
+                    className={`cursor-pointer hover:shadow-lg transition-shadow ${isDefault ? 'border-2 border-[#E87722]' : ''
+                      }`}
                     onClick={() => handleSelectPlan(String(plan.id))}
                   >
                     <CardHeader className="pb-6">

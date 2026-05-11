@@ -16,26 +16,26 @@ interface UserProfileProps {
   onUpdateUser: (user: User) => void;
 }
 
-  const generateEnrollmentSemesters = () => {
-    const semesters: string[] = [];
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+const generateEnrollmentSemesters = () => {
+  const semesters: string[] = [];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
 
-    let currentAcademicYearStart = year;
+  let currentAcademicYearStart = year;
 
-    if (month < 7) {
-      currentAcademicYearStart = year - 1;
-    }
-    
-    // Build list from past → current only
-    for (let y = currentAcademicYearStart - 4; y <= currentAcademicYearStart; y++) {
-      semesters.push(`Fall ${y}`);
-      semesters.push(`Spring ${y + 1}`);
-    }
+  if (month < 7) {
+    currentAcademicYearStart = year - 1;
+  }
 
-    return semesters;
-  };
+  // Build list from past → current only
+  for (let y = currentAcademicYearStart - 4; y <= currentAcademicYearStart; y++) {
+    semesters.push(`Fall ${y}`);
+    semesters.push(`Spring ${y + 1}`);
+  }
+
+  return semesters;
+};
 
 export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -48,17 +48,17 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
 
   const loadDegreePrograms = async () => {
     const { data, error } = await supabase
-        .from('degree_programs')
-        .select('code, name')
-        .order('name', { ascending: true });
+      .from('degree_programs')
+      .select('code, name')
+      .order('name', { ascending: true });
 
-      if (error) {
-        console.error('Error loading degree programs:', error);
-        toast.error('Failed to load majors');
-        return;
-      }
+    if (error) {
+      console.error('Error loading degree programs:', error);
+      toast.error('Failed to load majors');
+      return;
+    }
 
-      setDegreePrograms(data || []);
+    setDegreePrograms(data || []);
   };
 
   React.useEffect(() => {
@@ -185,13 +185,13 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
                     <SelectTrigger id="major">
                       <SelectValue />
                     </SelectTrigger>
-                      <SelectContent>
-                        {degreePrograms.map((program) => (
-                          <SelectItem key={program.code} value={program.code}>
-                            {program.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                    <SelectContent>
+                      {degreePrograms.map((program) => (
+                        <SelectItem key={program.code} value={program.code}>
+                          {program.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 ) : (
                   <Input
@@ -208,13 +208,13 @@ export function UserProfile({ user, onUpdateUser }: UserProfileProps) {
                     <SelectTrigger id="enrollment">
                       <SelectValue />
                     </SelectTrigger>
-                      <SelectContent>
-                        {generateEnrollmentSemesters().map((semester) => (
-                          <SelectItem key={semester} value={semester}>
-                            {semester}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                    <SelectContent>
+                      {generateEnrollmentSemesters().map((semester) => (
+                        <SelectItem key={semester} value={semester}>
+                          {semester}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 ) : (
                   <Input value={enrollmentSemester} disabled />

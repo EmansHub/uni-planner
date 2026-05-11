@@ -49,7 +49,7 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
       toast.success('Password reset email sent!');
       onPasswordReset(email);
       navigate('/reset-link-sent');
-      
+
     } catch (error) {
       console.error('[AUTH] Password reset error:', error);
       toast.error('An error occurred. Please check your connection.');
@@ -94,8 +94,8 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
               </div>
             </div>
 
-            <Button 
-              className="w-full" 
+            <Button
+              className="w-full"
               onClick={handleResetRequest}
               disabled={loading}
             >
@@ -116,9 +116,9 @@ export function ForgotPasswordPage({ onPasswordReset }: ForgotPasswordPageProps)
         </Card>
       </div>
 
-      <HelpChatbot 
-        isOpen={chatbotOpen} 
-        onToggle={() => setChatbotOpen(!chatbotOpen)} 
+      <HelpChatbot
+        isOpen={chatbotOpen}
+        onToggle={() => setChatbotOpen(!chatbotOpen)}
       />
     </>
   );
