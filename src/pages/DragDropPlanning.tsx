@@ -55,6 +55,10 @@ interface Course {
   maxElectivesAllowed?: number;
 }
 
+const DEFAULT_MAIN_SEMESTER_COUNT = 8; // 4 years
+const MAX_MAIN_SEMESTER_COUNT = 12; // 6 years
+const MAX_FALL_COUNT = 6;
+const MAX_SPRING_COUNT = 6;
 
 export function DragDropPlanning({ user, planId, onPlanSaved }: DragDropPlanningProps) {
   const navigate = useNavigate();
@@ -606,7 +610,7 @@ const getCappedDegreeCredits = (
     setCourseOfferingRules(map);
   };
 
-  const generateDefaultSemesters = () => {
+const generateDefaultSemesters = (count = DEFAULT_MAIN_SEMESTER_COUNT) => {
     const now = new Date();
     const month = now.getMonth() + 1;
     const day = now.getDate();
@@ -631,7 +635,7 @@ const getCappedDegreeCredits = (
     let type = startType;
     let semesterYear = startYear;
 
-    while (generated.length < 12) {
+    while (generated.length < count) {
       generated.push({
         id: `${type}-${semesterYear}`,
         name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${semesterYear}`,
@@ -1214,7 +1218,7 @@ const wantsSummerForAI =
   );
 
 const buildPlanningSlotsForAI = (includeSummer: boolean): Semester[] => {
-  const baseSemesters = generateDefaultSemesters();
+  const baseSemesters = generateDefaultSemesters(MAX_MAIN_SEMESTER_COUNT);
 
   const hasCurrentCourses = semesters[0]?.courses.length > 0;
   const slots = hasCurrentCourses ? baseSemesters.slice(1) : baseSemesters;
