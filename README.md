@@ -137,4 +137,5 @@ The application is currently intended for local use.
 **Furat Al Omran**
 
 Prince Mohammad Bin Fahd University
+
 Senior Project
